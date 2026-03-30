@@ -1,0 +1,70 @@
+@startuml c4-component-assistance
+!include <C4/C4_Component>
+
+title C4 Component Diagram -- Assistance Request & Review Workflow
+
+Person(member, "Member", "Eligible community member requesting emergency assistance")
+Person(committee, "Committee Member", "Reviews and votes on assistance requests")
+Person(admin, "Admin", "Manages system configuration and oversight")
+
+System_Boundary(api, "Assistance Request Subsystem") {
+
+    Component(requestCtrl, "AssistanceRequestController", ".NET Controller", "REST API for request submission, status, and history")
+    Component(reviewCtrl, "CommitteeReviewController", ".NET Controller", "REST API for review dashboard, document viewing, and voting")
+    Component(appealCtrl, "AppealController", ".NET Controller", "REST API for appeal submission and tracking")
+
+    Component(requestSvc, "AssistanceRequestService", ".NET Service", "Manages request lifecycle: draft, submit, status tracking")
+    Component(eligibility, "EligibilityValidator", ".NET Service", "Validates KYC status, waiting period, contribution standing, and payout limits")
+    Component(reviewSvc, "CommitteeReviewService", ".NET Service", "Assigns reviewers, manages review workflow, enforces conflict-of-interest rules")
+    Component(votingSvc, "VotingService", ".NET Service", "Records votes, checks quorum, tallies majority outcome")
+    Component(appealSvc, "AppealService", ".NET Service", "Manages appeal lifecycle, assigns separate appeal panel, finalizes appeal decision")
+    Component(deadlineJob, "ReviewDeadlineJob", "Background Worker", "Monitors 48-hour voting deadline, reassigns expired reviews")
+
+    ComponentDb(db, "PostgreSQL Database", "EF Core", "AssistanceRequest, ReviewAssignment, CommitteeVote, Appeal, RequestDocument tables")
+}
+
+System_Ext(docVault, "Document Vault", "AWS S3 / Azure Blob (CA region)\nAES-256 encrypted storage")
+System_Ext(notifSvc, "Notification Service", "SendGrid + Twilio\nEmail, SMS, Push notifications")
+System_Ext(payoutSvc, "Payout Processing", "Stripe / Interac\nDirect deposit & e-Transfer")
+System_Ext(authSvc, "Auth & KYC Service", "JWT Auth, KYC status,\nRBAC enforcement")
+
+' ── External actor relationships ──
+
+Rel(member, requestCtrl, "Submits requests,\nuploads documents,\nchecks status", "HTTPS / JSON")
+Rel(member, appealCtrl, "Files appeals", "HTTPS / JSON")
+Rel(committee, reviewCtrl, "Reviews requests,\ncasts votes", "HTTPS / JSON")
+Rel(admin, reviewCtrl, "Monitors review\nworkflow", "HTTPS / JSON")
+
+' ── Controller to Service ──
+
+Rel(requestCtrl, requestSvc, "Delegates request\noperations")
+Rel(requestCtrl, eligibility, "Checks member\neligibility")
+Rel(reviewCtrl, reviewSvc, "Delegates review\noperations")
+Rel(reviewCtrl, votingSvc, "Delegates vote\noperations")
+Rel(appealCtrl, appealSvc, "Delegates appeal\noperations")
+
+' ── Service to Service ──
+
+Rel(requestSvc, eligibility, "Validates eligibility\nat draft & submission")
+Rel(reviewSvc, votingSvc, "Triggers vote tally\non quorum")
+Rel(appealSvc, reviewSvc, "Assigns appeal panel\n(excluding original reviewers)")
+Rel(deadlineJob, reviewSvc, "Checks expired\nassignments")
+
+' ── Service to Database ──
+
+Rel(requestSvc, db, "CRUD requests\n& documents")
+Rel(reviewSvc, db, "CRUD review\nassignments")
+Rel(votingSvc, db, "CRUD votes")
+Rel(appealSvc, db, "CRUD appeals")
+
+' ── Service to External Systems ──
+
+Rel(requestSvc, docVault, "Uploads / retrieves\ndocuments", "HTTPS")
+Rel(requestSvc, notifSvc, "Sends submission\nconfirmation", "HTTPS")
+Rel(reviewSvc, notifSvc, "Sends review\nassignment & decision\nnotifications", "HTTPS")
+Rel(appealSvc, notifSvc, "Sends appeal status\nnotifications", "HTTPS")
+Rel(reviewSvc, payoutSvc, "Triggers payout on\napproval", "Event / HTTPS")
+Rel(eligibility, authSvc, "Fetches KYC status\n& member standing", "HTTPS")
+Rel(reviewSvc, docVault, "Generates pre-signed\nURLs for reviewers", "HTTPS")
+
+@enduml

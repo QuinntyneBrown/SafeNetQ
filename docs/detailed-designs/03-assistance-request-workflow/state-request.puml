@@ -1,0 +1,87 @@
+@startuml state-request
+!theme plain
+skinparam stateFontSize 14
+skinparam stateAttributeFontSize 12
+
+title Assistance Request -- State Machine
+
+[*] --> Draft : Member opens\nrequest form
+
+state Draft {
+    Draft : Category selected
+    Draft : Description entered
+    Draft : Documents uploaded
+}
+
+Draft --> Submitted : Member submits\n(eligibility re-validated)
+Draft --> [*] : Member discards draft
+
+state Submitted {
+    Submitted : Unique request ID generated
+    Submitted : Confirmation notification sent
+    Submitted : Awaiting reviewer assignment
+}
+
+Submitted --> UnderReview : Reviewers assigned\n(5 committee members)
+
+state UnderReview {
+    UnderReview : Committee members review
+    UnderReview : Documents inspected
+    UnderReview : Votes cast (Approve/Deny)
+    UnderReview : 48-hour voting deadline
+}
+
+UnderReview --> Approved : Majority vote = Approve\n(>= 3 of 5)
+UnderReview --> Denied : Majority vote = Deny\n(>= 3 of 5)
+
+state Approved {
+    Approved : Payout initiated
+    Approved : Member notified
+    Approved : Est. 48-72 hours
+}
+
+Approved --> Paid : Payout processed\nsuccessfully
+
+state Paid {
+    Paid : Funds transferred
+    Paid : Confirmation sent
+    Paid : Audit trail recorded
+}
+
+Paid --> [*]
+
+state Denied {
+    Denied : Category-level reason provided
+    Denied : Member notified
+    Denied : 14-day appeal window starts
+}
+
+Denied --> Appealed : Member submits appeal\n(within 14 days)
+Denied --> [*] : Appeal window expires\n(no appeal filed)
+
+state Appealed {
+    Appealed : New panel assigned
+    Appealed : (different reviewers)
+    Appealed : Additional docs reviewed
+    Appealed : 48-hour voting deadline
+}
+
+Appealed --> AppealApproved : Appeal panel majority\nvote = Approve
+Appealed --> AppealDenied : Appeal panel majority\nvote = Deny
+
+state AppealApproved {
+    AppealApproved : Original denial overturned
+    AppealApproved : Payout initiated
+}
+
+AppealApproved --> Paid : Payout processed\nsuccessfully
+
+state AppealDenied {
+    AppealDenied : Original denial upheld
+    AppealDenied : Decision is final
+    AppealDenied : No further appeals
+}
+
+AppealDenied --> [*]
+
+@enduml

@@ -1,0 +1,50 @@
+@startuml c4-component-auth
+!theme plain
+title Auth API -- C4 Component Diagram
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 15
+}
+
+rectangle "Auth API (.NET 8)" {
+
+  rectangle "AuthController\n[REST Controller]" as authctrl #LightBlue
+  rectangle "MfaController\n[REST Controller]" as mfactrl #LightBlue
+  rectangle "KycController\n[REST Controller]" as kycctrl #LightBlue
+
+  rectangle "AuthService\n[Application Service]" as authsvc #LightGreen
+  rectangle "KycService\n[Application Service]" as kycsvc #LightGreen
+  rectangle "TokenService\n[Infrastructure]" as toksvc #LightGreen
+  rectangle "MfaService\n[Infrastructure]" as mfasvc #LightGreen
+
+  rectangle "UserRepository\n[EF Core]" as urepo #Wheat
+  rectangle "KycRepository\n[EF Core]" as krepo #Wheat
+}
+
+database "PostgreSQL" as db #LightGray
+database "Redis" as redis #LightGray
+rectangle "Keycloak / Auth0" as idp #LightGray
+rectangle "Jumio / Onfido" as kyc #LightGray
+rectangle "Twilio" as sms #LightGray
+
+authctrl --> authsvc
+mfactrl --> authsvc
+kycctrl --> kycsvc
+
+authsvc --> toksvc
+authsvc --> mfasvc
+authsvc --> urepo
+
+kycsvc --> krepo
+kycsvc --> urepo
+
+urepo --> db
+krepo --> db
+toksvc --> redis
+toksvc --> idp
+mfasvc --> sms
+kycsvc --> kyc
+
+@enduml

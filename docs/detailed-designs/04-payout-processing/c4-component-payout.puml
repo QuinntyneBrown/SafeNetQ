@@ -1,0 +1,40 @@
+@startuml c4-component-payout
+!include <C4/C4_Component>
+
+title Component Diagram - Payout Processing
+
+Person(member, "Member", "Receives emergency payout")
+Person(admin, "Admin / Treasurer", "Monitors payouts and fund health")
+
+System_Boundary(payout_bc, "Payout Processing") {
+  Component(payoutApi, "Payout API", ".NET Controller", "REST endpoints for payout status and admin actions")
+  Component(payoutService, "PayoutService", ".NET Service", "Orchestrates payout lifecycle")
+  Component(limitEnforcer, "PayoutLimitEnforcer", ".NET Service", "Validates per-event, annual, and frequency limits")
+  Component(txRecorder, "TransactionRecorder", ".NET Service", "Persists immutable fund transactions")
+  Component(gatewayAdapter, "PaymentGatewayAdapter", ".NET Adapter", "Abstracts EFT and Interac e-Transfer APIs")
+  Component(trustService, "TrustAccountService", ".NET Service", "Manages trust account balance and withdrawals")
+  ComponentDb(payoutDb, "Payout Database", "PostgreSQL", "Payouts, limits, fund transactions")
+}
+
+System_Ext(paymentGw, "Payment Gateway", "Stripe / Moneris - EFT and Interac e-Transfer")
+System_Ext(assistanceSvc, "Assistance Request Service", "Publishes RequestApproved events")
+System_Ext(notifSvc, "Notification Service", "Email, push, SMS alerts")
+System_Ext(auditSvc, "Audit Service", "Immutable audit log")
+
+Rel(member, payoutApi, "Views payout status", "HTTPS")
+Rel(admin, payoutApi, "Monitors / retries payouts", "HTTPS")
+Rel(assistanceSvc, payoutService, "RequestApproved event", "Message Queue")
+Rel(payoutApi, payoutService, "Delegates")
+Rel(payoutService, limitEnforcer, "Validates limits")
+Rel(payoutService, trustService, "Reserves / confirms funds")
+Rel(payoutService, gatewayAdapter, "Dispatches payment")
+Rel(payoutService, txRecorder, "Records transactions")
+Rel(limitEnforcer, payoutDb, "Reads limits and usage")
+Rel(txRecorder, payoutDb, "Writes transactions")
+Rel(trustService, payoutDb, "Reads/writes balances")
+Rel(payoutService, payoutDb, "Reads/writes payouts")
+Rel(gatewayAdapter, paymentGw, "REST API calls", "HTTPS")
+Rel(payoutService, notifSvc, "Sends notifications", "Message Queue")
+Rel(txRecorder, auditSvc, "Publishes audit events", "Message Queue")
+
+@enduml

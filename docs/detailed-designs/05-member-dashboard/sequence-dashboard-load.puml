@@ -1,0 +1,52 @@
+@startuml sequence-dashboard-load
+title Member Dashboard -- Loading Dashboard Data
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+actor Member
+participant "React SPA" as SPA
+participant "DashboardController" as DC
+participant "DashboardService" as DS
+participant "Redis Cache" as Cache
+participant "ContributionRepo" as CR
+participant "PayoutRepo" as PR
+participant "FundHealthService" as FH
+database "PostgreSQL" as DB
+
+Member -> SPA : Navigate to Dashboard
+SPA -> DC : GET /api/v1/dashboard/summary\n[JWT Bearer Token]
+
+DC -> DC : Validate JWT, extract MemberId
+DC -> DS : GetSummaryAsync(memberId)
+
+DS -> Cache : Get("dashboard:{memberId}")
+alt Cache Hit
+  Cache --> DS : DashboardSummary (cached)
+else Cache Miss
+  DS -> CR : GetTotalAsync(memberId)
+  CR -> DB : SELECT SUM(amount)\nFROM contributions\nWHERE member_id = ?
+  DB --> CR : totalContributed
+  CR --> DS : totalContributed
+
+  DS -> PR : QueryAsync(memberId, latest)
+  PR -> DB : SELECT * FROM payouts\nWHERE member_id = ?\nORDER BY date DESC LIMIT 5
+  DB --> PR : recentPayouts
+  PR --> DS : recentPayouts
+
+  DS -> FH : GetHealthLevelAsync()
+  FH -> DB : SELECT reserve_ratio\nFROM fund_accounts
+  DB --> FH : reserveRatio
+  FH --> DS : FundHealthLevel
+
+  DS -> DS : Build DashboardSummary\n(status, eligibility, totals)
+  DS -> Cache : Set("dashboard:{memberId}",\nsummary, TTL=5min)
+end
+
+DS --> DC : DashboardSummary
+DC --> SPA : 200 OK DashboardSummaryDto
+SPA --> Member : Render dashboard cards
+
+@enduml

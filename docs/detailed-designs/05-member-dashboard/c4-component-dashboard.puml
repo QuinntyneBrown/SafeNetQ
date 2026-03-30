@@ -1,0 +1,39 @@
+@startuml c4-component-dashboard
+!include <C4/C4_Component>
+
+title C4 Component Diagram -- Member Dashboard
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+Person(member, "Member", "Authenticated platform member")
+
+System_Boundary(dashboard, "Member Dashboard Bounded Context") {
+  Component(dashCtrl, "DashboardController", "ASP.NET Core", "REST endpoints for dashboard summary, contributions, payouts")
+  Component(profileCtrl, "ProfileController", "ASP.NET Core", "REST endpoints for profile CRUD, data export, deletion")
+  Component(dashSvc, "DashboardService", ".NET Service", "Aggregates summary from contributions, payouts, fund health")
+  Component(profileSvc, "ProfileService", ".NET Service", "Profile updates, re-verification triggers, PIPEDA export")
+  Component(contribRepo, "ContributionRepository", "EF Core", "Queries contribution records with filtering/paging")
+  Component(payoutRepo, "PayoutRepository", "EF Core", "Queries payout records with filtering/paging")
+  Component(fundHealth, "FundHealthService", ".NET Service", "Computes qualitative fund health level from reserve ratio")
+}
+
+ContainerDb(postgres, "PostgreSQL", "Database", "Member, contribution, payout, fund account data")
+Container(redis, "Redis", "Cache", "Dashboard summary cache (5 min TTL)")
+Container(eventBus, "Event Bus", "RabbitMQ", "Profile-changed, deletion-requested events")
+
+Rel(member, dashCtrl, "Views dashboard", "HTTPS/JSON")
+Rel(member, profileCtrl, "Manages profile", "HTTPS/JSON")
+Rel(dashCtrl, dashSvc, "Delegates")
+Rel(profileCtrl, profileSvc, "Delegates")
+Rel(dashSvc, contribRepo, "Queries contributions")
+Rel(dashSvc, payoutRepo, "Queries payouts")
+Rel(dashSvc, fundHealth, "Gets health level")
+Rel(dashSvc, redis, "Reads/writes cache")
+Rel(contribRepo, postgres, "Reads")
+Rel(payoutRepo, postgres, "Reads")
+Rel(fundHealth, postgres, "Reads fund accounts")
+Rel(profileSvc, postgres, "Reads/writes profiles")
+Rel(profileSvc, eventBus, "Publishes events")
+
+@enduml
