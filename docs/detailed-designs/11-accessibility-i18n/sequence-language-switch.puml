@@ -1,0 +1,58 @@
+@startuml sequence-language-switch
+title Accessibility & i18n -- Language Switch Flow
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+actor Member
+participant "LanguageSwitcher\n(React)" as LS
+participant "I18nProvider\n(react-i18next)" as I18n
+participant "LocaleController" as LC
+participant "LocalizationService" as LZ
+database "PostgreSQL" as DB
+participant "Intl API\n(Browser)" as Intl
+
+Member -> LS : Select "Francais" from dropdown
+
+LS -> I18n : changeLanguage("fr-CA")
+
+I18n -> I18n : Check if fr-CA\ntranslations cached
+alt Translations not cached
+  I18n -> LC : GET /api/v1/locales/fr-CA/translations\n?ns=dashboard,common,auth
+  LC -> LZ : GetTranslationsAsync("fr-CA",\n["dashboard","common","auth"])
+  LZ -> DB : SELECT translations\nWHERE locale = 'fr-CA'\nAND namespace IN (...)
+  DB --> LZ : translation bundles
+  LZ --> LC : Dictionary<ns, Dictionary<key, value>>
+  LC --> I18n : JSON translation bundles
+  I18n -> I18n : Cache translations\nin memory
+else Translations cached
+  I18n -> I18n : Use cached translations
+end
+
+I18n -> I18n : Set active locale\nto "fr-CA"
+I18n -> I18n : Set document dir="ltr"\n(or "rtl" for Arabic)
+
+I18n -> Intl : Update formatters\n(date, currency, number)\nfor fr-CA locale
+
+I18n --> LS : Locale changed
+
+LS -> LC : PUT /api/v1/profile/language\n{locale: "fr-CA"} [JWT]
+LC -> LZ : SetUserLocaleAsync(memberId, "fr-CA")
+LZ -> DB : UPDATE user_profiles\nSET language = 'fr-CA'
+DB --> LZ : saved
+LZ --> LC : OK
+LC --> LS : 200 OK
+
+note over I18n
+  All UI text re-renders
+  instantly via React
+  context -- no page reload.
+  Dates show "29 mars 2026"
+  Currency shows "100,00 $"
+end note
+
+LS --> Member : UI now in French
+
+@enduml

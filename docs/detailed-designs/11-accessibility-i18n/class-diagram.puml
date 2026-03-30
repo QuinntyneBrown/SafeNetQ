@@ -1,0 +1,103 @@
+@startuml class-diagram
+title Accessibility & i18n -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Entities" {
+  class LocaleConfig {
+    +Code : string
+    +DisplayName : string
+    +NativeName : string
+    +Direction : TextDirection
+    +IsEnabled : bool
+    +FallbackLocale : string?
+  }
+
+  class TranslationNamespace {
+    +Name : string
+    +Description : string
+    +Keys : Dictionary<string, string>
+  }
+
+  class AccessibilityConfig {
+    +MinContrastRatio : double
+    +FocusRingColor : string
+    +FocusRingWidth : int
+    +ReducedMotionDefault : bool
+  }
+
+  class UserLanguagePreference {
+    +MemberId : Guid
+    +LocaleCode : string
+    +UpdatedAt : DateTime
+  }
+
+  enum TextDirection {
+    LTR
+    RTL
+  }
+}
+
+package "Interfaces" {
+  interface ILocalizationService {
+    +GetSupportedLocalesAsync() : Task<List<LocaleConfig>>
+    +GetTranslationsAsync(locale, ns) : Task<Dictionary>
+    +SetUserLocaleAsync(memberId, locale) : Task
+  }
+
+  interface IAccessibilityService {
+    +GetConfigAsync() : Task<AccessibilityConfig>
+  }
+}
+
+package "Controllers" {
+  class LocaleController {
+    +GetLocales() : IActionResult
+    +GetTranslations(code, ns) : IActionResult
+    +SetLanguage(req) : IActionResult
+  }
+}
+
+package "Frontend Components" {
+  class I18nProvider {
+    +locale : string
+    +fallback : string
+    +init() : void
+  }
+
+  class LanguageSwitcher {
+    +selectedLocale : string
+    +onLocaleChange(code) : void
+  }
+
+  class SkipNav {
+    +targetId : string
+    +label : string
+  }
+
+  class FocusTrap {
+    +isActive : bool
+    +restoreFocus : bool
+  }
+
+  class AccessibleForm {
+    +announceErrors : bool
+    +validateOnBlur : bool
+  }
+}
+
+LocaleConfig --> TextDirection
+LocaleConfig "1" -- "0..*" TranslationNamespace : contains
+UserLanguagePreference --> LocaleConfig : references
+
+LocaleController --> ILocalizationService
+I18nProvider ..> ILocalizationService : fetches translations
+LanguageSwitcher --> I18nProvider : triggers locale change
+AccessibleForm --> FocusTrap : uses in modals
+
+@enduml
