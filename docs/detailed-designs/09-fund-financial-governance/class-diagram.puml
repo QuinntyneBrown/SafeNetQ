@@ -1,0 +1,143 @@
+@startuml class-diagram
+title Fund Financial Governance -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Entities" {
+  class FundAccount {
+    +Id : Guid
+    +AccountType : AccountType
+    +Balance : decimal
+    +Version : int
+    +UpdatedAt : DateTime
+  }
+
+  class AccountTransaction {
+    +Id : Guid
+    +FromAccountId : Guid?
+    +ToAccountId : Guid
+    +Amount : decimal
+    +TransactionType : TransactionType
+    +Reference : string
+    +CreatedAt : DateTime
+  }
+
+  class ContributionSplit {
+    +Id : Guid
+    +ContributionId : Guid
+    +MemberId : Guid
+    +TotalAmount : decimal
+    +TrustAmount : decimal
+    +ReserveAmount : decimal
+    +OperatingAmount : decimal
+    +SplitAt : DateTime
+  }
+
+  class WaitingPeriod {
+    +Id : Guid
+    +MemberId : Guid
+    +StartDate : DateTime
+    +RequiredMonths : int
+    +ConsecutivePayments : int
+    +IsEligible : bool
+    +ResetAt : DateTime?
+  }
+
+  class PayoutCapConfig {
+    +Id : Guid
+    +Tier : string
+    +PerEventMax : decimal
+    +AnnualMax : decimal
+    +EffectiveDate : DateTime
+    +CreatedBy : Guid
+  }
+
+  enum AccountType {
+    MemberTrust
+    Reserve
+    Operating
+  }
+
+  enum TransactionType {
+    ContributionInflow
+    PayoutOutflow
+    ReserveAllocation
+    OperatingAllocation
+    Correction
+  }
+}
+
+package "Interfaces" {
+  interface IFundAccountService {
+    +GetBalanceAsync(type) : Task<decimal>
+    +RecordTransactionAsync(txn) : Task
+    +GetHistoryAsync(type, filter) : Task<PagedResult>
+  }
+
+  interface IContributionSplitter {
+    +SplitAsync(contributionId, amount) : Task<ContributionSplit>
+  }
+
+  interface IWaitingPeriodService {
+    +GetStatusAsync(memberId) : Task<WaitingPeriod>
+    +CheckEligibilityAsync(memberId) : Task<bool>
+    +ResetAsync(memberId) : Task
+  }
+
+  interface IPayoutCapService {
+    +GetCapsAsync(tier) : Task<PayoutCapConfig>
+    +ValidatePayoutAsync(memberId, amount) : Task<bool>
+    +UpdateCapsAsync(config) : Task
+  }
+
+  interface IFundHealthService {
+    +GetHealthLevelAsync() : Task<FundHealthLevel>
+    +GetReserveRatioAsync() : Task<decimal>
+  }
+
+  interface IReconciliationService {
+    +RunAsync() : Task<ReconciliationResult>
+  }
+
+  enum FundHealthLevel {
+    Healthy
+    Caution
+    Critical
+  }
+}
+
+package "Controllers" {
+  class FundController {
+    +GetHealth() : IActionResult
+    +GetAccounts() : IActionResult
+    +GetTransactions(filter) : IActionResult
+  }
+
+  class PayoutCapController {
+    +GetCaps(tier) : IActionResult
+    +UpdateCaps(req) : IActionResult
+  }
+
+  class WaitingPeriodController {
+    +GetStatus() : IActionResult
+  }
+}
+
+FundAccount --> AccountType
+AccountTransaction --> TransactionType
+FundAccount "1" -- "0..*" AccountTransaction : to
+ContributionSplit "1" -- "3" AccountTransaction : generates
+
+FundController --> IFundAccountService
+FundController --> IFundHealthService
+PayoutCapController --> IPayoutCapService
+WaitingPeriodController --> IWaitingPeriodService
+IContributionSplitter ..> IFundAccountService : uses
+IFundHealthService ..> IFundAccountService : uses
+
+@enduml

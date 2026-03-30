@@ -1,0 +1,40 @@
+@startuml sequence-contribution-split
+title Fund Financial Governance -- Contribution Split Across Accounts
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+participant "Event Bus\n(RabbitMQ)" as Bus
+participant "ContributionSplitter" as CS
+participant "FundAccountService" as FAS
+database "PostgreSQL" as DB
+
+Bus -> CS : ContributionReceived\n{contributionId, memberId,\namount: $100.00}
+
+CS -> CS : Calculate split:\nTrust  = $100 x 0.85 = $85.00\nReserve = $100 x 0.10 = $10.00\nOperating = $100 x 0.05 = $5.00
+
+group Atomic Transaction (DB)
+  CS -> FAS : RecordTransactionAsync(\nto: TrustAccount,\namount: $85.00,\ntype: ContributionInflow)
+  FAS -> DB : INSERT account_transaction\n(trust, $85.00)
+  FAS -> DB : UPDATE fund_accounts\nSET balance = balance + 85\nWHERE type = 'Trust'\nAND version = ?
+  DB --> FAS : rows affected = 1 (optimistic lock OK)
+
+  CS -> FAS : RecordTransactionAsync(\nto: ReserveAccount,\namount: $10.00,\ntype: ReserveAllocation)
+  FAS -> DB : INSERT account_transaction\n(reserve, $10.00)
+  FAS -> DB : UPDATE fund_accounts\nSET balance = balance + 10\nWHERE type = 'Reserve'\nAND version = ?
+  DB --> FAS : OK
+
+  CS -> FAS : RecordTransactionAsync(\nto: OperatingAccount,\namount: $5.00,\ntype: OperatingAllocation)
+  FAS -> DB : INSERT account_transaction\n(operating, $5.00)
+  FAS -> DB : UPDATE fund_accounts\nSET balance = balance + 5\nWHERE type = 'Operating'\nAND version = ?
+  DB --> FAS : OK
+
+  CS -> DB : INSERT contribution_split\n(contributionId, memberId,\ntrust=85, reserve=10, operating=5)
+  DB --> CS : saved
+end
+
+CS --> Bus : ContributionSplitCompleted\n{contributionId}
+
+@enduml

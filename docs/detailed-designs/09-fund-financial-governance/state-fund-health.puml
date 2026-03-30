@@ -1,0 +1,53 @@
+@startuml state-fund-health
+title Fund Financial Governance -- Fund Health States
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam state {
+  BackgroundColor<<healthy>> #d4edda
+  BackgroundColor<<caution>> #fff3cd
+  BackgroundColor<<critical>> #f8d7da
+}
+
+[*] --> Healthy
+
+state "Healthy" as Healthy <<healthy>> {
+  Healthy : Reserve ratio >= 3 months
+  Healthy : All payout caps normal
+  Healthy : No restrictions
+}
+
+state "Caution" as Caution <<caution>> {
+  Caution : Reserve ratio 1-3 months
+  Caution : Admin notified
+  Caution : Payout review expedited
+  Caution : Contribution increase suggested
+}
+
+state "Critical" as Critical <<critical>> {
+  Critical : Reserve ratio < 1 month
+  Critical : Board notified immediately
+  Critical : Payouts require board approval
+  Critical : Emergency contribution appeal
+  Critical : Payout caps may be reduced
+}
+
+Healthy --> Caution : Reserve ratio\ndrops below 3 months
+Caution --> Healthy : Reserve ratio\nrecovers to >= 3 months
+Caution --> Critical : Reserve ratio\ndrops below 1 month
+Critical --> Caution : Reserve ratio\nrecovers to >= 1 month
+
+note right of Healthy
+  **Reserve Ratio** =
+  Reserve Balance /
+  Avg Monthly Payouts (6-month window)
+end note
+
+note right of Critical
+  In Critical state, the system:
+  1. Blocks new non-emergency payouts
+  2. Sends urgent alerts to all admins
+  3. Logs state transition in audit trail
+end note
+
+@enduml
