@@ -1,0 +1,206 @@
+@startuml class-diagram
+skinparam classAttributeIconSize 0
+skinparam defaultFontSize 11
+skinparam classFontSize 12
+skinparam packageFontSize 12
+skinparam shadowing false
+skinparam linetype ortho
+left to right direction
+
+package "Admin Domain" {
+  class AuditEntry <<Entity>> {
+    - auditEntryId : Guid
+    - timestamp : DateTime
+    - actorId : Guid
+    - actionType : AuditActionType
+    - targetEntity : string
+    - targetEntityId : Guid
+    - details : JsonDocument
+    - ipAddress : string
+    - correlationId : string
+  }
+
+  enum AuditActionType {
+    MemberSuspended
+    MemberReactivated
+    MemberRemoved
+    RoleAssigned
+    RoleRevoked
+    KycApproved
+    KycRejected
+    TransactionFlagged
+    ReportGenerated
+    PayoutCompleted
+    DataAccessed
+    ConfigChanged
+  }
+
+  class FundSnapshot <<Entity>> {
+    - snapshotId : Guid
+    - timestamp : DateTime
+    - trustBalance : decimal
+    - reserveBalance : decimal
+    - operatingBalance : decimal
+    - reserveRatio : decimal
+    - runwayMonths : int
+    - monthlyInflow : decimal
+    - monthlyOutflow : decimal
+  }
+
+  class KycVerification <<Entity>> {
+    - verificationId : Guid
+    - memberId : Guid
+    - status : KycStatus
+    - autoResult : string?
+    - manualOverride : bool
+    - reviewerId : Guid?
+    - submittedAt : DateTime
+    - resolvedAt : DateTime?
+  }
+
+  enum KycStatus {
+    Pending
+    AutoApproved
+    AutoRejected
+    ManualApproved
+    ManualRejected
+  }
+
+  class SuspiciousTransactionFlag <<Entity>> {
+    - flagId : Guid
+    - transactionId : Guid
+    - reasonCode : string
+    - severity : FlagSeverity
+    - status : FlagStatus
+    - flaggedBy : Guid
+    - flaggedAt : DateTime
+    - resolvedBy : Guid?
+    - resolvedAt : DateTime?
+    - notes : string
+  }
+
+  enum FlagSeverity {
+    Low
+    Medium
+    High
+    Critical
+  }
+
+  enum FlagStatus {
+    Open
+    UnderReview
+    Escalated
+    Resolved
+    Dismissed
+  }
+}
+
+package "RBAC" {
+  class Role <<Entity>> {
+    - roleId : Guid
+    - name : string
+    - description : string
+    - isSystem : bool
+  }
+
+  class Permission <<Value Object>> {
+    - resource : string
+    - action : string
+    + Key() : string
+  }
+
+  class RoleAssignment <<Entity>> {
+    - assignmentId : Guid
+    - userId : Guid
+    - roleId : Guid
+    - assignedBy : Guid
+    - effectiveDate : DateTime
+    - expiryDate : DateTime?
+  }
+
+  Role "1" *-- "0..*" Permission
+  RoleAssignment --> Role
+}
+
+package "Service Interfaces" {
+  interface IFundHealthService {
+    + GetCurrentSnapshot() : FundSnapshot
+    + GetSnapshotHistory(range) : List<FundSnapshot>
+    + GetReserveAlerts() : List<Alert>
+  }
+
+  interface IMemberManagementService {
+    + SearchMembers(filter) : PagedResult<MemberSummaryDto>
+    + GetMemberDetail(id) : MemberDetailDto
+    + SuspendMember(id, reason) : void
+    + ReactivateMember(id) : void
+    + RemoveMember(id, reason) : void
+  }
+
+  interface IAuditService {
+    + Append(entry : AuditEntry) : void
+    + Search(filter : AuditFilter) : PagedResult<AuditEntry>
+    + Export(filter, format) : Stream
+  }
+
+  interface IRbacService {
+    + AssignRole(userId, roleId) : void
+    + RevokeRole(userId, roleId) : void
+    + GetEffectivePermissions(userId) : Set<Permission>
+    + HasPermission(userId, resource, action) : bool
+  }
+
+  interface IAmlKycService {
+    + GetPendingVerifications() : List<KycVerification>
+    + ApproveKyc(verificationId, reviewerId) : void
+    + RejectKyc(verificationId, reviewerId, reason) : void
+    + FlagTransaction(transactionId, reason, severity) : void
+    + GenerateStr(flagId) : Report
+    + GenerateLctr(transactionId) : Report
+  }
+}
+
+package "DTOs" {
+  class MemberSummaryDto {
+    + memberId : Guid
+    + name : string
+    + status : string
+    + tier : string
+    + kycStatus : string
+    + joinDate : DateTime
+  }
+
+  class MemberDetailDto {
+    + memberId : Guid
+    + profile : ProfileInfo
+    + contributionHistory : List
+    + payoutHistory : List
+    + kycStatus : KycStatus
+    + roles : List<Role>
+  }
+
+  class AuditFilter {
+    + dateFrom : DateTime?
+    + dateTo : DateTime?
+    + actorId : Guid?
+    + actionType : AuditActionType?
+    + targetEntity : string?
+  }
+}
+
+IFundHealthService ..> FundSnapshot
+IAuditService ..> AuditEntry
+IAuditService ..> AuditFilter
+IRbacService ..> Role
+IRbacService ..> Permission
+IRbacService ..> RoleAssignment
+IAmlKycService ..> KycVerification
+IAmlKycService ..> SuspiciousTransactionFlag
+IMemberManagementService ..> MemberSummaryDto
+IMemberManagementService ..> MemberDetailDto
+AuditEntry --> AuditActionType
+KycVerification --> KycStatus
+SuspiciousTransactionFlag --> FlagSeverity
+SuspiciousTransactionFlag --> FlagStatus
+
+@enduml

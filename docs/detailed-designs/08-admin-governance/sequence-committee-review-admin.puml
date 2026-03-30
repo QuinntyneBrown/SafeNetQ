@@ -1,0 +1,69 @@
+@startuml sequence-committee-review-admin
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+skinparam maxMessageSize 160
+
+title Admin -- Committee Review Management
+
+actor "Admin" as Admin
+participant "AdminAPI" as API
+participant "RbacService" as RBAC
+participant "MemberMgmt\nService" as MMS
+participant "AuditService" as AS
+participant "Notification\nService" as NS
+database "Admin DB" as DB
+
+== View Pending Committee Assignments ==
+
+Admin -> API : GET /admin/committee/pending
+activate API
+API -> RBAC : HasPermission(adminId, "Committee", "View")
+RBAC --> API : true
+API -> DB : Query pending assistance requests\n(status = UnderReview)
+DB --> API : List<PendingRequestDto>
+API --> Admin : 200 OK (pending requests)
+deactivate API
+
+== Review Committee Member Assignments ==
+
+Admin -> API : GET /admin/committee/request/{requestId}
+activate API
+API -> RBAC : HasPermission(adminId, "Committee", "View")
+RBAC --> API : true
+API -> DB : Load request details + assigned\ncommittee + votes
+DB --> API : RequestDetailDto
+API --> Admin : 200 OK (request detail with votes)
+deactivate API
+
+== Reassign Committee Member ==
+
+Admin -> API : POST /admin/committee/request/{requestId}/reassign
+activate API
+API -> RBAC : HasPermission(adminId, "Committee", "Manage")
+RBAC --> API : true
+API -> MMS : GetMemberDetail(newCommitteeMemberId)
+MMS --> API : MemberDetailDto
+API -> API : Validate: no conflict of interest
+API -> DB : Update committee assignment
+API -> AS : Append(AuditEntry: CommitteeReassigned)
+API -> NS : Notify new committee member
+NS --> API : Accepted
+API --> Admin : 200 OK (updated assignment)
+deactivate API
+
+== View Member Standing for Context ==
+
+Admin -> API : GET /admin/members/{memberId}/standing
+activate API
+API -> RBAC : HasPermission(adminId, "Member", "View")
+RBAC --> API : true
+API -> MMS : GetMemberDetail(memberId)
+MMS -> DB : Load member profile,\ncontributions, payouts
+DB --> MMS : MemberDetailDto
+MMS --> API : MemberDetailDto
+API -> AS : Append(AuditEntry: DataAccessed,\ntarget=Member:{memberId})
+API --> Admin : 200 OK (member standing)
+deactivate API
+
+@enduml

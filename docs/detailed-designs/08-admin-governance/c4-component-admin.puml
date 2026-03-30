@@ -1,0 +1,50 @@
+@startuml c4-component-admin
+!include <C4/C4_Component>
+
+title Component Diagram - Admin & Governance Dashboard
+
+Person(admin, "Admin", "Full platform governance")
+Person(treasurer, "Treasurer", "Fund health monitoring")
+Person(compliance, "Compliance Officer", "AML/KYC management")
+Person(auditor, "Auditor", "Read-only audit access")
+
+System_Boundary(admin_bc, "Admin & Governance") {
+  Component(adminApi, "Admin API", ".NET Controller", "REST endpoints with RBAC middleware")
+  Component(rbacService, "RbacService", ".NET Service", "Role and permission evaluation")
+  Component(fundHealth, "FundHealthService", ".NET Service", "Account balances, reserve ratio, runway projection")
+  Component(memberMgmt, "MemberManagementService", ".NET Service", "Member CRUD, search, status transitions")
+  Component(amlKyc, "AmlKycService", ".NET Service", "KYC queue, transaction flags, FINTRAC reports")
+  Component(auditService, "AuditService", ".NET Service", "Append-only audit log, search, export")
+  ComponentDb(adminDb, "Admin Database", "PostgreSQL", "Roles, permissions, audit entries, fund snapshots")
+}
+
+System_Ext(idVerify, "Identity Verification", "Jumio / Onfido")
+System_Ext(notifSvc, "Notification Service", "Email, push, SMS")
+System_Ext(payoutSvc, "Payout Processing", "Fund movement events")
+System_Ext(contribSvc, "Contribution Management", "Payment status events")
+System_Ext(fintrac, "FINTRAC", "Regulatory report submission")
+
+Rel(admin, adminApi, "Manages members, roles, config", "HTTPS")
+Rel(treasurer, adminApi, "Views fund health, reports", "HTTPS")
+Rel(compliance, adminApi, "Reviews KYC, flags transactions", "HTTPS")
+Rel(auditor, adminApi, "Queries and exports audit logs", "HTTPS")
+
+Rel(adminApi, rbacService, "Authorizes requests")
+Rel(adminApi, fundHealth, "Delegates fund queries")
+Rel(adminApi, memberMgmt, "Delegates member operations")
+Rel(adminApi, amlKyc, "Delegates compliance operations")
+Rel(adminApi, auditService, "Logs all actions")
+
+Rel(rbacService, adminDb, "Reads roles and permissions")
+Rel(fundHealth, adminDb, "Reads/writes fund snapshots")
+Rel(memberMgmt, adminDb, "Reads/writes member data")
+Rel(amlKyc, adminDb, "Reads/writes KYC and flags")
+Rel(auditService, adminDb, "Appends audit entries")
+
+Rel(amlKyc, idVerify, "Verifies identity", "REST API")
+Rel(amlKyc, fintrac, "Submits reports", "File Export")
+Rel(memberMgmt, notifSvc, "Sends status notifications", "Message Queue")
+Rel(auditService, payoutSvc, "Receives fund events", "Message Queue")
+Rel(auditService, contribSvc, "Receives payment events", "Message Queue")
+
+@enduml

@@ -1,0 +1,153 @@
+@startuml class-diagram
+title Community Feed & Notifications -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Entities" {
+  class FeedEntry {
+    +Id : Guid
+    +Category : string
+    +AmountRangeLow : decimal
+    +AmountRangeHigh : decimal
+    +OccurredAt : DateTime
+    +ThankYouMessage : string?
+    +ModerationStatus : ModerationStatus
+    +CreatedAt : DateTime
+  }
+
+  class Notification {
+    +Id : Guid
+    +RecipientId : Guid
+    +Type : NotificationType
+    +Channel : NotificationChannel
+    +Title : string
+    +Body : string
+    +Status : DeliveryStatus
+    +SentAt : DateTime?
+    +ReadAt : DateTime?
+    +CreatedAt : DateTime
+  }
+
+  class NotificationPreference {
+    +Id : Guid
+    +MemberId : Guid
+    +NotificationType : NotificationType
+    +EmailEnabled : bool
+    +PushEnabled : bool
+    +SmsEnabled : bool
+  }
+
+  class NotificationTemplate {
+    +Id : Guid
+    +NotificationType : NotificationType
+    +Channel : NotificationChannel
+    +SubjectTemplate : string
+    +BodyTemplate : string
+  }
+
+  class DeviceRegistration {
+    +Id : Guid
+    +MemberId : Guid
+    +DeviceToken : string
+    +Platform : string
+    +RegisteredAt : DateTime
+  }
+
+  enum NotificationType {
+    ContributionReceipt
+    PaymentFailure
+    RequestStatusChange
+    PayoutProcessed
+    CommunityAnnouncement
+  }
+
+  enum NotificationChannel {
+    Email
+    Push
+    SMS
+  }
+
+  enum DeliveryStatus {
+    Queued
+    Sent
+    Delivered
+    Failed
+  }
+
+  enum ModerationStatus {
+    Pending
+    Approved
+    Rejected
+  }
+}
+
+package "Interfaces" {
+  interface IFeedService {
+    +GetEntriesAsync(cursor, limit) : Task<CursorPage<FeedEntry>>
+    +CreateEntryAsync(event) : Task
+    +SubmitThankYouAsync(payoutId, msg) : Task
+  }
+
+  interface INotificationService {
+    +SendAsync(type, recipientId, data) : Task
+    +GetHistoryAsync(memberId, page) : Task<PagedResult>
+    +MarkAsReadAsync(notificationId) : Task
+  }
+
+  interface INotificationDispatcher {
+    +DispatchAsync(notification) : Task
+  }
+
+  interface IEmailAdapter {
+    +SendAsync(to, templateId, vars) : Task
+  }
+
+  interface ISmsAdapter {
+    +SendAsync(to, body) : Task
+  }
+
+  interface IPushAdapter {
+    +SendAsync(deviceToken, title, body) : Task
+  }
+}
+
+package "Controllers" {
+  class FeedController {
+    +GetFeed(cursor, limit) : IActionResult
+    +SubmitThankYou(req) : IActionResult
+  }
+
+  class NotificationController {
+    +GetHistory(page) : IActionResult
+    +MarkAsRead(id) : IActionResult
+    +MarkAllAsRead() : IActionResult
+  }
+
+  class NotifPrefController {
+    +GetPreferences() : IActionResult
+    +UpdatePreferences(req) : IActionResult
+  }
+}
+
+FeedEntry --> ModerationStatus
+Notification --> NotificationType
+Notification --> NotificationChannel
+Notification --> DeliveryStatus
+NotificationPreference --> NotificationType
+NotificationTemplate --> NotificationType
+NotificationTemplate --> NotificationChannel
+
+FeedController --> IFeedService
+NotificationController --> INotificationService
+NotifPrefController ..> NotificationPreference : manages
+INotificationService ..> INotificationDispatcher : uses
+INotificationDispatcher ..> IEmailAdapter : delegates
+INotificationDispatcher ..> ISmsAdapter : delegates
+INotificationDispatcher ..> IPushAdapter : delegates
+
+@enduml

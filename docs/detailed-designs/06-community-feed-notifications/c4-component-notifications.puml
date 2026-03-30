@@ -1,0 +1,46 @@
+@startuml c4-component-notifications
+!include <C4/C4_Component>
+
+title C4 Component Diagram -- Community Feed & Notifications
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+Person(member, "Member", "Authenticated platform member")
+
+System_Boundary(feedNotif, "Community Feed & Notifications Bounded Context") {
+  Component(feedCtrl, "FeedController", "ASP.NET Core", "Paginated feed endpoint, thank-you submission")
+  Component(notifCtrl, "NotificationController", "ASP.NET Core", "Notification history, read status")
+  Component(prefCtrl, "NotifPrefController", "ASP.NET Core", "Notification preference management")
+  Component(feedSvc, "FeedService", ".NET Service", "Creates anonymized feed entries from payout events")
+  Component(notifSvc, "NotificationService", ".NET Service", "Resolves preferences, renders templates, dispatches")
+  Component(dispatcher, "NotificationDispatcher", "Hangfire Worker", "Routes to channel adapters with retry logic")
+  Component(emailAdapt, "EmailAdapter", "SendGrid SDK", "Sends templated transactional email")
+  Component(smsAdapt, "SmsAdapter", "Twilio SDK", "Sends SMS for critical alerts")
+  Component(pushAdapt, "PushAdapter", "FCM SDK", "Sends web and mobile push notifications")
+}
+
+ContainerDb(postgres, "PostgreSQL", "Database", "Feed entries, notifications, preferences, templates")
+Container(eventBus, "Event Bus", "RabbitMQ", "PayoutCompleted, PaymentFailed, RequestStatusChanged events")
+System_Ext(sendgrid, "SendGrid", "Transactional email delivery")
+System_Ext(twilio, "Twilio", "SMS delivery")
+System_Ext(fcm, "Firebase Cloud Messaging", "Push notification delivery")
+
+Rel(member, feedCtrl, "Views feed", "HTTPS/JSON")
+Rel(member, notifCtrl, "Views notifications", "HTTPS/JSON")
+Rel(member, prefCtrl, "Manages preferences", "HTTPS/JSON")
+Rel(feedCtrl, feedSvc, "Delegates")
+Rel(notifCtrl, notifSvc, "Delegates")
+Rel(eventBus, feedSvc, "PayoutCompleted events")
+Rel(eventBus, notifSvc, "All notification-triggering events")
+Rel(notifSvc, dispatcher, "Enqueues delivery jobs")
+Rel(dispatcher, emailAdapt, "Email channel")
+Rel(dispatcher, smsAdapt, "SMS channel")
+Rel(dispatcher, pushAdapt, "Push channel")
+Rel(emailAdapt, sendgrid, "API call")
+Rel(smsAdapt, twilio, "API call")
+Rel(pushAdapt, fcm, "API call")
+Rel(feedSvc, postgres, "Reads/writes feed")
+Rel(notifSvc, postgres, "Reads/writes notifications")
+
+@enduml

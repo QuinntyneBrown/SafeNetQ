@@ -1,0 +1,35 @@
+@startuml state-member-lifecycle
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam stateFontSize 12
+
+title Member Lifecycle States (Admin Perspective)
+
+[*] --> Registered : User completes\nregistration
+
+Registered --> PendingKyc : Initiates identity\nverification
+
+PendingKyc --> Active : KYC approved\n(auto or manual)
+PendingKyc --> Registered : KYC rejected;\nmember may resubmit
+
+Active --> WaitingPeriod : First 3 months\nafter KYC approval
+WaitingPeriod --> Active : Waiting period\ncompleted
+
+Active --> Suspended : Admin suspends\n(missed payments,\npolicy violation)
+WaitingPeriod --> Suspended : Admin suspends
+
+Suspended --> Active : Admin reactivates;\nwaiting period may reset
+Suspended --> Removed : Admin permanently\nremoves member
+
+Active --> Removed : Admin removes\n(fraud, violation)
+
+Removed --> [*]
+
+state Registered : Entry / Account created\nEntry / Email/phone verified
+state PendingKyc : Entry / ID + selfie submitted\nDo / Await verification result
+state Active : Entry / Full platform access\nEntry / Can contribute and request
+state WaitingPeriod : Entry / 3-month countdown\nEntry / Can contribute\nEntry / Cannot request assistance
+state Suspended : Entry / All access restricted\nEntry / Notify member with reason\nEntry / Log in audit trail
+state Removed : Entry / Account deactivated\nEntry / Data retained 7 years\nEntry / Notify member
+
+@enduml

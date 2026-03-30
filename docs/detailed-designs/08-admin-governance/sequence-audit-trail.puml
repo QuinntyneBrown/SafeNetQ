@@ -1,0 +1,81 @@
+@startuml sequence-audit-trail
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+skinparam maxMessageSize 160
+
+title Audit Trail -- Write and Query Paths
+
+participant "Any Service\n(PayoutService,\nMemberMgmt, etc.)" as Source
+participant "AuditService" as AS
+participant "RbacService" as RBAC
+database "Audit Store\n(Append-Only)" as DB
+actor "Auditor / Admin" as Auditor
+
+== Write Path: Recording an Audit Entry ==
+
+Source -> AS : Append(AuditEntry)
+activate AS
+note right of Source
+  AuditEntry contains:
+  - timestamp (UTC)
+  - actorId
+  - actionType
+  - targetEntity + targetEntityId
+  - details (JSON)
+  - ipAddress
+  - correlationId
+end note
+AS -> AS : Validate entry completeness
+AS -> AS : Set timestamp = DateTime.UtcNow\n(server-side, tamper-proof)
+AS -> DB : INSERT audit_entries (append-only)
+note right of DB
+  Table has no UPDATE or
+  DELETE permissions.
+  Enforced at DB level.
+end note
+DB --> AS : Stored
+AS --> Source : Acknowledged
+deactivate AS
+
+== Write Path: Domain Event Listener ==
+
+Source -> AS : DomainEvent (e.g., PayoutCompleted)
+activate AS
+AS -> AS : Map event to AuditEntry
+AS -> DB : INSERT audit_entries
+DB --> AS : Stored
+deactivate AS
+
+== Read Path: Audit Log Query ==
+
+Auditor -> AS : Search(filter: AuditFilter)
+activate AS
+AS -> RBAC : HasPermission(userId,\n"AuditLog", "View")
+activate RBAC
+RBAC --> AS : true
+deactivate RBAC
+AS -> DB : SELECT with filters\n(dateRange, actorId, actionType)
+DB --> AS : PagedResult<AuditEntry>
+AS -> AS : Record DataAccessed\naudit entry (meta-audit)
+AS -> DB : INSERT audit_entries\n(action=AuditLogQueried)
+AS --> Auditor : PagedResult<AuditEntry>
+deactivate AS
+
+== Read Path: Export for External Audit ==
+
+Auditor -> AS : Export(filter, format=CSV)
+activate AS
+AS -> RBAC : HasPermission(userId,\n"AuditLog", "Export")
+activate RBAC
+RBAC --> AS : true
+deactivate RBAC
+AS -> DB : Stream matching entries
+DB --> AS : Result stream
+AS -> AS : Format as CSV
+AS -> AS : Record ExportPerformed\naudit entry
+AS -> DB : INSERT audit_entries
+AS --> Auditor : CSV file stream
+deactivate AS
+
+@enduml

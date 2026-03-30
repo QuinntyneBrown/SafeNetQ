@@ -1,0 +1,57 @@
+@startuml sequence-notification
+title Community Feed & Notifications -- Sending a Notification
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+participant "Domain Event\n(e.g. PayoutCompleted)" as Event
+participant "NotificationService" as NS
+participant "PreferenceRepo" as PR
+participant "TemplateRepo" as TR
+participant "NotificationDispatcher" as ND
+participant "EmailAdapter\n(SendGrid)" as Email
+participant "PushAdapter\n(FCM)" as Push
+participant "SmsAdapter\n(Twilio)" as SMS
+database "PostgreSQL" as DB
+
+Event -> NS : Handle PayoutProcessed\n{memberId, amount, ref}
+
+NS -> PR : GetPreferencesAsync(memberId,\nPayoutProcessed)
+PR -> DB : SELECT * FROM notification_prefs\nWHERE member_id = ?\nAND type = 'PayoutProcessed'
+DB --> PR : preferences
+PR --> NS : {email: true, push: true, sms: true}
+
+NS -> TR : GetTemplatesAsync(PayoutProcessed)
+TR -> DB : SELECT * FROM notification_templates\nWHERE type = 'PayoutProcessed'
+DB --> TR : templates[]
+TR --> NS : templates (email, push, sms)
+
+loop For each enabled channel
+  NS -> NS : Render template with data
+  NS -> DB : INSERT notification\n(queued)
+
+  NS -> ND : DispatchAsync(notification)
+
+  alt Channel = Email
+    ND -> Email : SendAsync(to, templateId, vars)
+    Email --> ND : deliveryId
+  else Channel = Push
+    ND -> Push : SendAsync(deviceToken, title, body)
+    Push --> ND : messageId
+  else Channel = SMS
+    ND -> SMS : SendAsync(phoneNumber, body)
+    SMS --> ND : sid
+  end
+
+  ND --> NS : success / failure
+
+  alt Delivery failed
+    NS -> NS : Schedule retry\n(max 3, exponential backoff)
+  end
+
+  NS -> DB : UPDATE notification\nSET status = Sent/Failed
+end
+
+@enduml
