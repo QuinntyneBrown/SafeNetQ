@@ -1,0 +1,51 @@
+@startuml sequence-upload
+title Document Vault -- Upload Flow with Encryption
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+actor Member
+participant "React SPA" as SPA
+participant "DocumentController" as DC
+participant "DocumentService" as DS
+participant "ScanService\n(ClamAV)" as Scan
+participant "EncryptionService\n(KMS)" as Enc
+participant "StorageAdapter\n(S3/Azure Blob)" as Store
+database "PostgreSQL" as DB
+
+Member -> SPA : Select file(s) to upload
+SPA -> SPA : Client-side validation\n(type, size <= 10MB)
+SPA -> DC : POST /api/v1/documents/upload\n[multipart/form-data, JWT]
+
+DC -> DC : Validate JWT, extract memberId
+DC -> DC : Validate MIME type\n(PDF, JPG, PNG only)
+
+DC -> DS : UploadAsync(memberId, file, category)
+
+DS -> Scan : ScanAsync(fileStream)
+alt File infected
+  Scan --> DS : ScanResult.Infected
+  DS --> DC : 422 Unprocessable\n"Malware detected"
+  DC --> SPA : Error response
+  SPA --> Member : "File rejected -- malware detected"
+else Scan clean
+  Scan --> DS : ScanResult.Clean
+
+  DS -> Enc : EncryptAsync(fileStream, keyRef)
+  Enc -> Enc : AES-256-GCM encryption\nusing KMS data key
+  Enc --> DS : encryptedStream
+
+  DS -> Store : PutObjectAsync(\n"docs/{memberId}/{guid}", \nencryptedStream, contentType)
+  Store --> DS : success
+
+  DS -> DB : INSERT document metadata\n(id, owner, path, keyRef,\nscanStatus=Clean, expiresAt)
+  DB --> DS : saved
+
+  DS --> DC : Document metadata
+  DC --> SPA : 201 Created\nDocumentMetadataDto
+  SPA --> Member : "Upload successful"
+end
+
+@enduml

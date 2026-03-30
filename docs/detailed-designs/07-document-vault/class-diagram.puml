@@ -1,0 +1,135 @@
+@startuml class-diagram
+title Document Vault -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Entities" {
+  class Document {
+    +Id : Guid
+    +OwnerId : Guid
+    +Filename : string
+    +ContentType : string
+    +SizeBytes : long
+    +StoragePath : string
+    +EncryptionKeyRef : string
+    +ScanStatus : ScanStatus
+    +Category : DocumentCategory
+    +UploadedAt : DateTime
+    +RetentionExpiresAt : DateTime
+  }
+
+  class DocumentAccessLog {
+    +Id : Guid
+    +DocumentId : Guid
+    +AccessorId : Guid
+    +AccessType : AccessType
+    +Timestamp : DateTime
+    +IpAddress : string
+    +Justification : string?
+  }
+
+  class RetentionPolicy {
+    +Id : Guid
+    +Category : DocumentCategory
+    +RetentionYears : int
+    +IsActive : bool
+  }
+
+  enum ScanStatus {
+    Pending
+    Clean
+    Infected
+    ScanFailed
+  }
+
+  enum DocumentCategory {
+    KycIdentity
+    KycAddress
+    AssistanceEvidence
+    Other
+  }
+
+  enum AccessType {
+    View
+    Download
+    Delete
+  }
+}
+
+package "Interfaces" {
+  interface IDocumentService {
+    +UploadAsync(ownerId, file, category) : Task<Document>
+    +GetMetadataAsync(docId, requesterId) : Task<Document>
+    +GenerateAccessUrlAsync(docId, requesterId) : Task<AccessUrlResult>
+    +DeleteAsync(docId) : Task
+  }
+
+  interface IStorageAdapter {
+    +PutObjectAsync(path, stream, contentType) : Task
+    +GetPresignedUrlAsync(path, expiry) : Task<string>
+    +DeleteObjectAsync(path) : Task
+  }
+
+  interface IEncryptionService {
+    +EncryptAsync(stream, keyRef) : Task<Stream>
+    +DecryptAsync(stream, keyRef) : Task<Stream>
+  }
+
+  interface IScanService {
+    +ScanAsync(stream) : Task<ScanResult>
+  }
+
+  interface IDocumentRepository {
+    +AddAsync(doc) : Task
+    +GetByIdAsync(id) : Task<Document>
+    +GetByOwnerAsync(ownerId) : Task<List<Document>>
+    +GetExpiredAsync(asOf) : Task<List<Document>>
+    +DeleteAsync(id) : Task
+    +AddAccessLogAsync(log) : Task
+  }
+}
+
+package "Controllers" {
+  class DocumentController {
+    +Upload(file, category) : IActionResult
+    +GetMetadata(id) : IActionResult
+    +GetAccessUrl(id) : IActionResult
+    +ListDocuments() : IActionResult
+  }
+}
+
+package "DTOs" {
+  class DocumentMetadataDto {
+    +Id : Guid
+    +Filename : string
+    +ContentType : string
+    +SizeBytes : long
+    +UploadedAt : DateTime
+    +ExpiresAt : DateTime
+    +ScanStatus : string
+  }
+
+  class AccessUrlResponse {
+    +Url : string
+    +ExpiresAt : DateTime
+  }
+}
+
+Document --> ScanStatus
+Document --> DocumentCategory
+DocumentAccessLog --> AccessType
+RetentionPolicy --> DocumentCategory
+Document "1" -- "0..*" DocumentAccessLog
+
+DocumentController --> IDocumentService
+IDocumentService ..> IStorageAdapter : uses
+IDocumentService ..> IEncryptionService : uses
+IDocumentService ..> IScanService : uses
+IDocumentService ..> IDocumentRepository : uses
+
+@enduml

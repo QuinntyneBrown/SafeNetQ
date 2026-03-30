@@ -1,0 +1,41 @@
+@startuml c4-component-vault
+!include <C4/C4_Component>
+
+title C4 Component Diagram -- Document Vault
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+Person(member, "Member", "Uploads and views documents")
+Person(reviewer, "Committee Reviewer", "Views documents for assistance requests")
+
+System_Boundary(vault, "Document Vault Bounded Context") {
+  Component(docCtrl, "DocumentController", "ASP.NET Core", "Upload, metadata, access-url endpoints")
+  Component(docSvc, "DocumentService", ".NET Service", "Orchestrates upload pipeline and access-url generation")
+  Component(scanSvc, "ScanService", "ClamAV Client", "Virus/malware scanning of uploaded files")
+  Component(encSvc, "EncryptionService", "KMS Client", "AES-256-GCM encryption/decryption via KMS data keys")
+  Component(storageAdapt, "StorageAdapter", "AWS S3 SDK", "Object put, pre-signed URL generation, delete")
+  Component(docRepo, "DocumentRepository", "EF Core", "Document metadata and access log persistence")
+  Component(retentionWorker, "RetentionWorker", "Hangfire Job", "Deletes expired documents per retention policy")
+}
+
+ContainerDb(postgres, "PostgreSQL", "Database", "Document metadata, access logs, retention policies")
+System_Ext(s3, "AWS S3 (ca-central-1)", "Encrypted object storage with lifecycle policies")
+System_Ext(kms, "AWS KMS", "Key management for AES-256-GCM encryption")
+System_Ext(clamav, "ClamAV", "Malware scanning engine")
+
+Rel(member, docCtrl, "Uploads / views docs", "HTTPS/JSON")
+Rel(reviewer, docCtrl, "Views assigned docs", "HTTPS/JSON")
+Rel(docCtrl, docSvc, "Delegates")
+Rel(docSvc, scanSvc, "Scans file")
+Rel(docSvc, encSvc, "Encrypts/decrypts")
+Rel(docSvc, storageAdapt, "Stores/retrieves objects")
+Rel(docSvc, docRepo, "Reads/writes metadata")
+Rel(retentionWorker, docRepo, "Queries expired docs")
+Rel(retentionWorker, storageAdapt, "Deletes expired objects")
+Rel(docRepo, postgres, "Reads/writes")
+Rel(storageAdapt, s3, "S3 API")
+Rel(encSvc, kms, "Key operations")
+Rel(scanSvc, clamav, "Scan API")
+
+@enduml

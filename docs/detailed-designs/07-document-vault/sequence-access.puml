@@ -1,0 +1,56 @@
+@startuml sequence-access
+title Document Vault -- Accessing Document with Pre-Signed URL
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+actor "Member / Reviewer" as Actor
+participant "React SPA" as SPA
+participant "DocumentController" as DC
+participant "DocumentService" as DS
+participant "StorageAdapter\n(S3/Azure Blob)" as Store
+database "PostgreSQL" as DB
+
+Actor -> SPA : Click "View Document"
+SPA -> DC : GET /api/v1/documents/{id}/access-url\n[JWT Bearer Token]
+
+DC -> DC : Validate JWT, extract requesterId
+
+DC -> DS : GenerateAccessUrlAsync(docId, requesterId)
+
+DS -> DB : SELECT document\nWHERE id = docId
+DB --> DS : Document metadata
+
+DS -> DS : Authorization check:\n- Owner? Allow\n- Assigned reviewer? Allow\n- Admin with justification? Require justification param
+
+alt Not authorized
+  DS --> DC : 403 Forbidden
+  DC --> SPA : 403 Forbidden
+  SPA --> Actor : "Access denied"
+else Authorized
+  DS -> Store : GetPresignedUrlAsync(\nstoragePath, expiry=1hr)
+  Store --> DS : presignedUrl (1-hour TTL)
+
+  DS -> DB : INSERT access_log\n(docId, requesterId, View,\ntimestamp, IP, justification)
+  DB --> DS : logged
+
+  DS --> DC : AccessUrlResult
+  DC --> SPA : 200 OK\n{url, expiresAt}
+
+  SPA -> Store : GET presignedUrl
+  Store --> SPA : Encrypted object
+
+  SPA -> SPA : Render document\nin browser viewer
+  SPA --> Actor : Document displayed
+end
+
+note right of Store
+  Pre-signed URL grants
+  read-only access to
+  this specific object
+  for 1 hour only.
+end note
+
+@enduml
