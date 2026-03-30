@@ -1,0 +1,36 @@
+@startuml c4-component-contributions
+!include <C4/C4_Component>
+
+title Component Diagram - Contributions Bounded Context
+
+Person(member, "Member", "Selects tier, manages payment methods, views history")
+Person(admin, "Admin", "Monitors billing, issues refunds")
+
+System_Boundary(contributions, "Contributions Bounded Context") {
+  Component(api, "ContributionController", ".NET Web API", "REST endpoints for tier, payment, history, receipts")
+  Component(contribSvc, "ContributionService", ".NET Service", "Tier changes, history queries, receipt orchestration")
+  Component(paymentSvc, "PaymentService", ".NET Service", "Payment method CRUD, charge execution via Stripe")
+  Component(scheduler, "BillingScheduler", "Hangfire Job", "CRON-triggered monthly billing and retry processing")
+  Component(receiptGen, "ReceiptGenerator", ".NET Service", "Generates PDF receipts with QuestPDF")
+  ComponentDb(db, "Contributions DB", "PostgreSQL", "Contributions, PaymentMethods, Tiers, BillingCycles")
+}
+
+System_Ext(stripe, "Stripe", "Payment processing, tokenization, PaymentIntents")
+System_Ext(notify, "Notification Service", "Email/SMS/Push via SendGrid & Twilio")
+System_Ext(blobStore, "Document Storage", "Azure Blob / AWS S3 (Canadian region)", "Receipt PDF storage")
+
+Rel(member, api, "Uses", "HTTPS/JSON")
+Rel(admin, api, "Manages", "HTTPS/JSON")
+
+Rel(api, contribSvc, "Delegates")
+Rel(api, paymentSvc, "Delegates")
+Rel(contribSvc, db, "Reads/Writes")
+Rel(paymentSvc, db, "Reads/Writes")
+Rel(paymentSvc, stripe, "Creates PaymentIntents", "HTTPS")
+Rel(scheduler, contribSvc, "Triggers billing")
+Rel(scheduler, paymentSvc, "Triggers charges")
+Rel(contribSvc, receiptGen, "Generates receipts")
+Rel(receiptGen, blobStore, "Stores PDFs", "HTTPS")
+Rel(contribSvc, notify, "Sends notifications", "HTTPS")
+
+@enduml

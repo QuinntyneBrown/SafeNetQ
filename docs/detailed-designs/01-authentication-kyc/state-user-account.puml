@@ -1,0 +1,32 @@
+@startuml state-user-account
+title User Account State Machine
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #F7F7F7
+  BorderColor #333333
+}
+
+[*] --> Unverified : User registers
+
+Unverified --> EmailVerified : Email link clicked
+Unverified --> Unverified : Resend verification
+
+EmailVerified --> KycPending : KYC documents submitted
+EmailVerified --> Locked : 5 failed login attempts
+
+KycPending --> KycVerified : Provider approves
+KycPending --> EmailVerified : Provider rejects\n(user may retry)
+
+KycVerified --> Active : Admin activates\nor auto-activate
+
+Active --> Suspended : Admin suspends\nor policy violation
+Active --> Locked : 5 failed login attempts
+
+Suspended --> Active : Admin reinstates
+
+Locked --> Active : Password reset completed
+Locked --> Suspended : Admin review
+
+@enduml

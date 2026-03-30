@@ -1,0 +1,213 @@
+@startuml class-diagram
+!theme plain
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam classFontSize 13
+skinparam defaultFontSize 12
+
+title Assistance Request & Review Workflow -- Class Diagram
+
+' ──────────────────────────────────────────────
+'  ENUMERATIONS
+' ──────────────────────────────────────────────
+
+enum EmergencyCategory {
+    Medical
+    Housing
+    IncomeLoss
+    DeathInFamily
+    DomesticCrisis
+}
+
+enum RequestStatus {
+    Draft
+    Submitted
+    UnderReview
+    Approved
+    Denied
+    Paid
+    Appealed
+    AppealApproved
+    AppealDenied
+}
+
+enum VoteOutcome {
+    Approve
+    Deny
+}
+
+enum AppealStatus {
+    Submitted
+    UnderReview
+    Upheld
+    Overturned
+}
+
+' ──────────────────────────────────────────────
+'  DOMAIN ENTITIES
+' ──────────────────────────────────────────────
+
+class AssistanceRequest {
+    +Guid Id
+    +Guid MemberId
+    +EmergencyCategory Category
+    +string Description
+    +RequestStatus Status
+    +decimal RequestedAmount
+    +decimal ApprovedAmount
+    +DateTime CreatedAt
+    +DateTime? SubmittedAt
+    +DateTime? ReviewStartedAt
+    +DateTime? DecisionAt
+    +DateTime? PaidAt
+    +string DenialReason
+    +List<RequestDocument> Documents
+    +List<ReviewAssignment> ReviewAssignments
+    +Appeal? Appeal
+}
+
+class RequestDocument {
+    +Guid Id
+    +Guid AssistanceRequestId
+    +string FileName
+    +string ContentType
+    +string StorageKey
+    +long FileSizeBytes
+    +DateTime UploadedAt
+}
+
+class ReviewAssignment {
+    +Guid Id
+    +Guid AssistanceRequestId
+    +Guid CommitteeMemberId
+    +DateTime AssignedAt
+    +DateTime Deadline
+    +bool IsRecused
+    +CommitteeVote? Vote
+}
+
+class CommitteeVote {
+    +Guid Id
+    +Guid ReviewAssignmentId
+    +VoteOutcome Outcome
+    +string Justification
+    +DateTime VotedAt
+}
+
+class Appeal {
+    +Guid Id
+    +Guid AssistanceRequestId
+    +AppealStatus Status
+    +string Explanation
+    +DateTime SubmittedAt
+    +DateTime? DecisionAt
+    +string DecisionReason
+    +List<RequestDocument> AdditionalDocuments
+    +List<ReviewAssignment> AppealReviewAssignments
+}
+
+' ──────────────────────────────────────────────
+'  DTOs
+' ──────────────────────────────────────────────
+
+class SubmitRequestDto {
+    +EmergencyCategory Category
+    +string Description
+    +decimal RequestedAmount
+    +List<IFormFile> Documents
+}
+
+class ReviewDecisionDto {
+    +VoteOutcome Outcome
+    +string Justification
+}
+
+class AppealSubmissionDto {
+    +string Explanation
+    +List<IFormFile> AdditionalDocuments
+}
+
+class RequestSummaryDto {
+    +Guid Id
+    +EmergencyCategory Category
+    +RequestStatus Status
+    +decimal RequestedAmount
+    +DateTime SubmittedAt
+    +DateTime? DecisionAt
+}
+
+class EligibilityResultDto {
+    +bool IsEligible
+    +List<string> Reasons
+}
+
+' ──────────────────────────────────────────────
+'  SERVICE INTERFACES
+' ──────────────────────────────────────────────
+
+interface IAssistanceRequestService {
+    +Task<EligibilityResultDto> CheckEligibility(Guid memberId)
+    +Task<AssistanceRequest> CreateDraft(Guid memberId, SubmitRequestDto dto)
+    +Task<AssistanceRequest> SubmitRequest(Guid requestId)
+    +Task<RequestSummaryDto> GetRequestSummary(Guid requestId)
+    +Task<List<RequestSummaryDto>> GetMemberRequests(Guid memberId)
+}
+
+interface ICommitteeReviewService {
+    +Task AssignReviewers(Guid requestId)
+    +Task<List<ReviewAssignment>> GetPendingReviews(Guid committeeMemberId)
+    +Task<AssistanceRequest> GetReviewDetail(Guid requestId)
+    +Task RecuseReviewer(Guid assignmentId)
+    +Task FinalizeDecision(Guid requestId)
+}
+
+interface IVotingService {
+    +Task<CommitteeVote> CastVote(Guid assignmentId, ReviewDecisionDto dto)
+    +Task<bool> HasQuorum(Guid requestId)
+    +Task<VoteOutcome> TallyVotes(Guid requestId)
+}
+
+interface IAppealService {
+    +Task<Appeal> SubmitAppeal(Guid requestId, AppealSubmissionDto dto)
+    +Task AssignAppealPanel(Guid appealId)
+    +Task FinalizeAppealDecision(Guid appealId)
+    +Task<bool> IsAppealWindowOpen(Guid requestId)
+}
+
+interface IEligibilityValidator {
+    +Task<EligibilityResultDto> Validate(Guid memberId)
+}
+
+' ──────────────────────────────────────────────
+'  RELATIONSHIPS
+' ──────────────────────────────────────────────
+
+AssistanceRequest --> EmergencyCategory
+AssistanceRequest --> RequestStatus
+AssistanceRequest "1" *-- "0..*" RequestDocument
+AssistanceRequest "1" *-- "0..*" ReviewAssignment
+AssistanceRequest "1" *-- "0..1" Appeal
+
+ReviewAssignment "1" *-- "0..1" CommitteeVote
+CommitteeVote --> VoteOutcome
+
+Appeal --> AppealStatus
+Appeal "1" *-- "0..*" RequestDocument : additionalDocs
+Appeal "1" *-- "0..*" ReviewAssignment : appealReviewers
+
+IAssistanceRequestService ..> AssistanceRequest
+IAssistanceRequestService ..> EligibilityResultDto
+IAssistanceRequestService ..> SubmitRequestDto
+
+ICommitteeReviewService ..> ReviewAssignment
+ICommitteeReviewService ..> AssistanceRequest
+
+IVotingService ..> CommitteeVote
+IVotingService ..> ReviewDecisionDto
+
+IAppealService ..> Appeal
+IAppealService ..> AppealSubmissionDto
+
+IAssistanceRequestService ..> IEligibilityValidator : uses
+
+@enduml

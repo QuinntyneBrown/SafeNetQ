@@ -1,0 +1,36 @@
+@startuml state-payout
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam stateFontSize 12
+
+title Payout State Machine
+
+[*] --> Initiated : Committee approves\nassistance request
+
+Initiated --> LimitsValidated : Per-event, annual,\nand frequency limits pass
+Initiated --> Failed : Limits exceeded
+
+LimitsValidated --> FundsReserved : Trust account balance\nsufficient; funds held
+LimitsValidated --> Failed : Insufficient\ntrust balance
+
+FundsReserved --> Processing : Payment dispatched\nto gateway
+
+Processing --> Completed : Gateway confirms\nsuccessful deposit
+Processing --> Failed : Gateway reports\npayment failure
+
+Failed --> Initiated : Admin triggers\nmanual retry
+
+Completed --> Reversed : Fraud detected or\nclawback required
+
+Completed --> [*]
+Reversed --> [*]
+
+state Initiated : Entry / Create payout record\nEntry / Notify member
+state LimitsValidated : Entry / Log limit check result
+state FundsReserved : Entry / Hold funds with\noptimistic lock
+state Processing : Entry / Record gateway reference\nEntry / Notify member
+state Completed : Entry / Confirm withdrawal\nEntry / Record FundTransaction\nEntry / Notify member
+state Failed : Entry / Release reserved funds\nEntry / Log failure reason\nEntry / Notify member
+state Reversed : Entry / Credit trust account\nEntry / Record reversal transaction\nEntry / Notify compliance
+
+@enduml

@@ -1,0 +1,117 @@
+@startuml sequence-committee-review
+!theme plain
+skinparam sequenceMessageAlign center
+
+title Assistance Request -- Committee Review & Voting Sequence
+
+actor "Committee\nMember" as CM
+participant "Review Dashboard UI" as UI
+participant "API Gateway" as API
+participant "CommitteeReviewService" as CRS
+participant "VotingService" as VS
+participant "Document Vault\n(Storage)" as DV
+participant "Notification Service" as NS
+database "PostgreSQL" as DB
+
+== Reviewer Assignment (Automated) ==
+
+[-> CRS : OnRequestSubmitted event
+CRS -> DB : Fetch active committee members
+DB --> CRS : Committee roster
+
+CRS -> CRS : Exclude members from\nsame community group\n(conflict of interest)
+
+CRS -> CRS : Select 5 reviewers\n(round-robin / least-loaded)
+
+loop For each of 5 selected reviewers
+    CRS -> DB : INSERT ReviewAssignment\n{ requestId, committeeMemberId,\ndeadline = now()+48h }
+    DB --> CRS : Saved
+    CRS -> NS : Notify committee member\n"New review assigned"
+end
+
+CRS -> DB : UPDATE AssistanceRequest\nSET Status = UnderReview,\nReviewStartedAt = now()
+DB --> CRS : Updated
+
+CRS -> NS : Notify member\n"Your request is under review"
+
+== Committee Member Reviews Request ==
+
+CM -> UI : Open Review Dashboard
+UI -> API : GET /api/v1/committee/reviews/pending
+API -> CRS : GetPendingReviews(committeeMemberId)
+CRS -> DB : Fetch assigned reviews\nwhere voted = false
+DB --> CRS : List of assignments
+CRS --> API : ReviewAssignment[]
+API --> UI : Display pending reviews
+
+CM -> UI : Select a request to review
+UI -> API : GET /api/v1/committee/reviews/{requestId}
+API -> CRS : GetReviewDetail(requestId)
+CRS -> DB : Fetch request + member standing\n(anonymized member ID)
+DB --> CRS : Request detail
+CRS --> API : Request detail DTO
+API --> UI : Show request detail
+
+CM -> UI : View uploaded documents
+UI -> API : GET /api/v1/documents/{storageKey}
+API -> DV : Generate pre-signed URL\n(1-hour expiry)
+DV --> API : Signed URL
+API --> UI : Document viewer
+
+== Voting ==
+
+CM -> UI : Vote "Approve" or "Deny"\nwith justification
+UI -> API : POST /api/v1/committee/reviews/{assignmentId}/vote\n{ outcome, justification }
+API -> VS : CastVote(assignmentId, dto)
+
+VS -> DB : Verify assignment belongs to\ncommittee member and not expired
+DB --> VS : Valid
+
+VS -> DB : INSERT CommitteeVote\n{ outcome, justification, votedAt }
+DB --> VS : Saved
+
+VS -> VS : HasQuorum(requestId)
+VS -> DB : Count votes for request
+DB --> VS : voteCount
+
+alt quorum not yet reached (< 3 of 5)
+    VS --> API : 200 OK "Vote recorded"
+    API --> UI : "Vote recorded. Awaiting other reviewers."
+else quorum reached (>= 3 votes)
+    VS -> VS : TallyVotes(requestId)
+    VS -> DB : Fetch all votes
+    DB --> VS : votes[]
+
+    VS -> VS : Majority determines outcome\n(3+ Approve = Approved,\n3+ Deny = Denied)
+
+    alt Majority = Approve
+        VS -> CRS : FinalizeDecision(requestId)
+        CRS -> DB : UPDATE AssistanceRequest\nSET Status = Approved,\nApprovedAmount = requestedAmount,\nDecisionAt = now()
+        DB --> CRS : Updated
+        CRS -> NS : Notify member\n"Your request has been approved!\nEstimated payout: 48-72 hours"
+        note right : Triggers Payout Processing\n(L1-4)
+    else Majority = Deny
+        VS -> CRS : FinalizeDecision(requestId)
+        CRS -> DB : UPDATE AssistanceRequest\nSET Status = Denied,\nDenialReason = category-level reason,\nDecisionAt = now()
+        DB --> CRS : Updated
+        CRS -> NS : Notify member\n"Your request was not approved.\nYou may appeal within 14 days."
+    end
+
+    VS --> API : 200 OK "Decision finalized"
+    API --> UI : "Decision recorded."
+end
+
+== Voting Deadline Expiry (Background Job) ==
+
+[-> CRS : Scheduled check every hour
+CRS -> DB : Fetch assignments past deadline\nwithout vote
+DB --> CRS : Expired assignments
+
+loop For each expired assignment
+    CRS -> DB : Mark assignment as expired
+    CRS -> NS : Notify committee member\n"Review deadline missed"
+end
+
+CRS -> CRS : If remaining votes sufficient\nfor quorum, continue.\nElse assign replacement reviewer.
+
+@enduml

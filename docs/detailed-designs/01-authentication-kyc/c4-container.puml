@@ -1,0 +1,50 @@
+@startuml c4-container
+!theme plain
+title SafeNetQ -- C4 Container Diagram
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 15
+}
+
+actor "Community\nMember" as member
+
+rectangle "SafeNetQ Platform" {
+
+  rectangle "Web Application\n[React SPA]" as webapp #LightBlue
+  rectangle "Mobile Application\n[React Native]" as mobile #LightBlue
+
+  rectangle "API Gateway\n[YARP / Ocelot]" as gw #LightGreen
+
+  rectangle "Auth API\n[.NET 8 Web API]" as authapi #LightGreen
+  rectangle "KYC API\n[.NET 8 Web API]" as kycapi #LightGreen
+
+  database "PostgreSQL\n[User Store]" as db #Wheat
+  database "Redis\n[Token Cache]" as redis #Wheat
+}
+
+rectangle "Keycloak / Auth0\n[Identity Provider]" as idp #LightGray
+rectangle "Jumio / Onfido\n[KYC Provider]" as kyc #LightGray
+rectangle "SendGrid / SES\n[Email]" as email #LightGray
+rectangle "Twilio\n[SMS]" as sms #LightGray
+
+member --> webapp : HTTPS
+member --> mobile : HTTPS
+
+webapp --> gw : REST/JSON
+mobile --> gw : REST/JSON
+
+gw --> authapi
+gw --> kycapi
+
+authapi --> db : EF Core
+authapi --> redis : Token storage
+authapi --> idp : OIDC
+authapi --> email : SMTP/API
+authapi --> sms : API
+
+kycapi --> db : EF Core
+kycapi --> kyc : REST API
+
+@enduml

@@ -1,0 +1,63 @@
+@startuml sequence-registration
+title User Registration Flow
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+actor "User" as user
+participant "Web/Mobile\nClient" as client
+participant "AuthController" as ctrl
+participant "AuthService" as svc
+participant "UserRepository" as repo
+database "PostgreSQL" as db
+participant "EmailService" as email
+
+user -> client : Fill registration form
+client -> ctrl : POST /api/auth/register\n{email, password, fullName, dob, phone}
+activate ctrl
+
+ctrl -> svc : RegisterAsync(RegisterRequest)
+activate svc
+
+svc -> svc : Validate input\n(email format, password policy)
+svc -> repo : GetByEmailAsync(email)
+activate repo
+repo -> db : SELECT by email
+db --> repo : null (not found)
+repo --> svc : null
+deactivate repo
+
+svc -> svc : Hash password (bcrypt, cost 12)
+svc -> svc : Check password breach DB\n(HaveIBeenPwned k-Anonymity)
+
+svc -> repo : AddAsync(User)
+activate repo
+repo -> db : INSERT user + profile
+db --> repo : OK
+repo --> svc : OK
+deactivate repo
+
+svc -> svc : Generate email verification token
+svc -> email : SendVerificationEmail(email, token)
+activate email
+email --> svc : Queued
+deactivate email
+
+svc --> ctrl : RegisterResponse\n{userId, emailVerificationRequired=true}
+deactivate svc
+
+ctrl --> client : 201 Created
+deactivate ctrl
+client --> user : "Check your email to verify"
+
+... Later ...
+
+user -> client : Click verification link
+client -> ctrl : GET /api/auth/verify-email?token=xxx
+ctrl -> svc : VerifyEmailAsync(token)
+svc -> repo : UpdateAsync(status = EmailVerified)
+svc --> ctrl : OK
+ctrl --> client : 200 OK -- Email verified
+
+@enduml

@@ -1,0 +1,66 @@
+@startuml sequence-login-mfa
+title Login with MFA Flow
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+actor "User" as user
+participant "Client" as client
+participant "AuthController" as ctrl
+participant "AuthService" as auth
+participant "TokenService" as tok
+participant "MfaService" as mfa
+participant "UserRepository" as repo
+database "Redis" as redis
+
+user -> client : Enter email + password
+client -> ctrl : POST /api/auth/login\n{email, password, deviceFingerprint}
+activate ctrl
+
+ctrl -> auth : LoginAsync(LoginRequest)
+activate auth
+
+auth -> repo : GetByEmailAsync(email)
+repo --> auth : User (with MfaConfig)
+
+auth -> auth : Verify password hash (bcrypt)
+
+alt Password invalid
+  auth --> ctrl : 401 Unauthorized
+  ctrl --> client : 401 Invalid credentials
+else Password valid, MFA enabled
+  auth -> auth : Create MFA challenge (UUID + expiry)
+  auth -> redis : Store challenge {id, userId, ttl=5min}
+  auth --> ctrl : LoginResponse\n{mfaRequired=true, challengeId}
+  deactivate auth
+  ctrl --> client : 200 {mfaRequired, challengeId}
+  deactivate ctrl
+
+  client --> user : Prompt for MFA code
+
+  user -> client : Enter TOTP code
+  client -> ctrl : POST /api/mfa/verify\n{challengeId, code}
+  activate ctrl
+  ctrl -> auth : VerifyMfaAsync(challengeId, code)
+  activate auth
+  auth -> redis : Get challenge by id
+  redis --> auth : {userId}
+  auth -> repo : GetByIdAsync(userId)
+  repo --> auth : User
+  auth -> mfa : VerifyCode(secret, code)
+  mfa --> auth : true
+
+  auth -> tok : GenerateAccessToken(user)
+  tok --> auth : JWT (15 min)
+  auth -> tok : GenerateRefreshToken()
+  tok --> auth : RefreshToken
+  auth -> redis : Store hashed refresh token
+  auth --> ctrl : LoginResponse\n{accessToken, refreshToken}
+  deactivate auth
+  ctrl --> client : 200 {tokens}
+  deactivate ctrl
+  client --> user : Logged in
+end
+
+@enduml

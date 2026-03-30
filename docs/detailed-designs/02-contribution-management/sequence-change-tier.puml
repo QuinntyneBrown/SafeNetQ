@@ -1,0 +1,40 @@
+@startuml sequence-change-tier
+skinparam dpi 150
+skinparam defaultFontSize 10
+skinparam sequenceMessageAlign center
+
+title Member Changes Contribution Tier
+
+actor Member
+participant "Frontend" as FE
+participant "ContributionController" as CC
+participant "ContributionService" as CS
+database "Database" as DB
+participant "NotificationService" as NS
+
+Member -> FE : Select new tier
+FE -> FE : Show fee breakdown\n(85% trust / 10% reserve / 5% fee)
+Member -> FE : Confirm change
+
+FE -> CC : PUT /api/contributions/tier\n{newTierId}
+CC -> CS : ChangeTier(memberId, request)
+
+CS -> DB : Validate tier exists\nand is active
+CS -> DB : Get current BillingCycle
+
+alt Same tier as current
+  CS --> CC : 400 "Already on this tier"
+  CC --> FE : Error response
+  FE --> Member : "You are already\non this tier"
+else Valid tier change
+  CS -> DB : Record tier change\n(effectiveDate = nextBillingDate)
+  CS -> DB : Insert TierChangeAuditLog\n(memberId, oldTier, newTier, timestamp)
+  CS --> CC : 200 OK {newTier, effectiveDate}
+
+  CS -> NS : SendTierChangeConfirmation\n(memberId, newTierName,\neffectiveDate)
+
+  CC --> FE : {tierName, amount,\nbreakdown, effectiveDate}
+  FE --> Member : "Tier updated.\nEffective next billing cycle."
+end
+
+@enduml

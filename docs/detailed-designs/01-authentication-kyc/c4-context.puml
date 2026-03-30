@@ -1,0 +1,30 @@
+@startuml c4-context
+!theme plain
+title SafeNetQ -- C4 Context Diagram
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 15
+}
+
+actor "Community Member" as member
+actor "Platform Admin" as admin
+
+rectangle "SafeNetQ\nMutual Aid Platform" as system #LightBlue {
+}
+
+rectangle "Email Service\n(SendGrid / SES)" as email #LightGray
+rectangle "Identity Provider\n(Keycloak / Auth0)" as idp #LightGray
+rectangle "KYC Provider\n(Jumio / Onfido)" as kyc #LightGray
+rectangle "SMS Gateway\n(Twilio)" as sms #LightGray
+
+member --> system : Registers, logs in,\nsubmits KYC, uses platform
+admin --> system : Manages users,\nreviews KYC overrides
+
+system --> idp : Delegates OIDC\nauthentication
+system --> kyc : Submits identity\ndocuments
+system --> email : Sends verification\n& notification emails
+system --> sms : Sends MFA\nSMS codes
+
+@enduml

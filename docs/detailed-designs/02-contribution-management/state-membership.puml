@@ -1,0 +1,33 @@
+@startuml state-membership
+skinparam dpi 150
+skinparam defaultFontSize 10
+
+title Membership Standing States
+
+[*] --> Active : Onboarding complete\n& first payment succeeds
+
+Active --> Active : Monthly payment\nsucceeds
+
+Active --> Suspended : 3 consecutive\npayment failures
+
+Suspended --> Reinstated : Member updates\npayment method &\noutstanding balance paid
+
+Reinstated --> Active : Next monthly\npayment succeeds
+
+Suspended --> Cancelled : No resolution\nafter 30 days
+
+Cancelled --> [*]
+
+note right of Suspended
+  - Cannot submit assistance requests
+  - Cannot vote in governance
+  - Retains contribution history
+  - Receives reinstatement reminders
+end note
+
+note right of Reinstated
+  - Waiting-period timer restarts
+  - Contribution history preserved
+end note
+
+@enduml

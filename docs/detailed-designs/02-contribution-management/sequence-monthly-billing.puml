@@ -1,0 +1,50 @@
+@startuml sequence-monthly-billing
+skinparam dpi 150
+skinparam defaultFontSize 10
+skinparam sequenceMessageAlign center
+
+title Automated Monthly Contribution Processing
+
+participant "BillingScheduler\n(CRON Job)" as Sched
+participant "ContributionService" as CS
+participant "PaymentService" as PS
+participant "Stripe API" as Stripe
+participant "ReceiptGenerator" as RG
+participant "NotificationService" as NS
+database "Database" as DB
+
+Sched -> CS : ProcessDueContributions(today)
+CS -> DB : Query BillingCycles\nwhere billingDay == today\nAND standing != Cancelled
+
+loop for each due BillingCycle
+  CS -> DB : Create Contribution record\n(status = Pending, amounts split\n85% trust / 10% reserve / 5% fee)
+  CS -> PS : ChargeContribution(contribution)
+  PS -> DB : Update status = Processing
+  PS -> Stripe : Create PaymentIntent\n(amount, paymentMethodId,\nconfirm: true)
+
+  alt Payment succeeds
+    Stripe --> PS : PaymentIntent.succeeded
+    PS -> DB : Update status = Success,\npaidAt = now
+    PS -> DB : Reset consecutiveFailures = 0
+    PS --> CS : PaymentResult.Success
+    CS -> RG : Generate(contribution)
+    RG --> CS : PDF receipt bytes
+    CS -> DB : Store receipt reference
+    CS -> NS : SendPaymentConfirmation\n(memberId, amount, receiptUrl)
+  else Payment fails
+    Stripe --> PS : PaymentIntent.failed\n(reason)
+    PS -> DB : Update status = Failed,\nfailureReason, retryCount++
+    PS -> DB : Increment consecutiveFailures
+    PS --> CS : PaymentResult.Failed
+
+    alt consecutiveFailures < 3
+      CS -> DB : Schedule retry\n(+2 days, status = Retrying)
+      CS -> NS : SendPaymentFailedRetry\n(memberId, nextRetryDate)
+    else consecutiveFailures >= 3
+      CS -> DB : Set standing = Suspended
+      CS -> NS : SendMembershipSuspended\n(memberId)
+    end
+  end
+end
+
+@enduml

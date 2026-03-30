@@ -1,0 +1,176 @@
+@startuml class-diagram
+title Member Dashboard -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain / Read Models" {
+  class DashboardSummary {
+    +MemberId : Guid
+    +MembershipStatus : MembershipStatus
+    +TotalContributed : decimal
+    +NextPaymentDate : DateTime
+    +NextPaymentAmount : decimal
+    +PayoutEligibility : bool
+    +EligibilityReason : string
+    +FundHealthLevel : FundHealthLevel
+  }
+
+  class ContributionRecord {
+    +Id : Guid
+    +MemberId : Guid
+    +Date : DateTime
+    +Amount : decimal
+    +Tier : string
+    +Status : PaymentStatus
+    +ReceiptRef : string
+  }
+
+  class PayoutRecord {
+    +Id : Guid
+    +MemberId : Guid
+    +Date : DateTime
+    +Amount : decimal
+    +Category : string
+    +Status : PayoutStatus
+    +RequestId : Guid
+  }
+
+  class MemberProfile {
+    +MemberId : Guid
+    +FullName : string
+    +Phone : string
+    +Address : string
+    +Language : string
+    +Preferences : List<NotificationPreference>
+  }
+
+  class NotificationPreference {
+    +NotificationType : string
+    +EmailEnabled : bool
+    +PushEnabled : bool
+    +SmsEnabled : bool
+  }
+
+  enum MembershipStatus {
+    Active
+    Suspended
+    PendingKyc
+    WaitingPeriod
+  }
+
+  enum FundHealthLevel {
+    Healthy
+    Caution
+    Low
+  }
+
+  enum PaymentStatus {
+    Success
+    Failed
+    Pending
+  }
+
+  enum PayoutStatus {
+    Approved
+    Processing
+    Paid
+    Denied
+  }
+}
+
+package "Interfaces" {
+  interface IDashboardService {
+    +GetSummaryAsync(memberId) : Task<DashboardSummary>
+    +GetContributionsAsync(memberId, filter) : Task<PagedResult>
+    +GetPayoutsAsync(memberId, filter) : Task<PagedResult>
+  }
+
+  interface IProfileService {
+    +GetProfileAsync(memberId) : Task<MemberProfile>
+    +UpdateProfileAsync(memberId, dto) : Task
+    +ExportDataAsync(memberId) : Task<byte[]>
+    +RequestDeletionAsync(memberId) : Task
+  }
+
+  interface IContributionRepository {
+    +QueryAsync(memberId, filter) : Task<PagedResult>
+    +GetTotalAsync(memberId) : Task<decimal>
+  }
+
+  interface IPayoutRepository {
+    +QueryAsync(memberId, filter) : Task<PagedResult>
+  }
+
+  interface IFundHealthService {
+    +GetHealthLevelAsync() : Task<FundHealthLevel>
+  }
+}
+
+package "Controllers" {
+  class DashboardController {
+    +GetSummary() : IActionResult
+    +GetContributions(filter) : IActionResult
+    +GetPayouts(filter) : IActionResult
+  }
+
+  class ProfileController {
+    +GetProfile() : IActionResult
+    +UpdateProfile(req) : IActionResult
+    +ExportData() : IActionResult
+    +RequestDeletion() : IActionResult
+  }
+}
+
+package "DTOs" {
+  class DashboardSummaryDto {
+    +MembershipStatus : string
+    +TotalContributed : decimal
+    +NextPaymentDate : DateTime
+    +NextPaymentAmount : decimal
+    +PayoutEligibility : bool
+    +EligibilityReason : string
+    +FundHealthLevel : string
+  }
+
+  class ContributionItemDto {
+    +Date : DateTime
+    +Amount : decimal
+    +Tier : string
+    +Status : string
+    +ReceiptUrl : string
+  }
+
+  class PayoutItemDto {
+    +Date : DateTime
+    +Amount : decimal
+    +Category : string
+    +Status : string
+    +RequestId : Guid
+  }
+
+  class ProfileUpdateRequest {
+    +FullName : string
+    +Phone : string
+    +Address : string
+    +Language : string
+  }
+}
+
+DashboardSummary --> MembershipStatus
+DashboardSummary --> FundHealthLevel
+ContributionRecord --> PaymentStatus
+PayoutRecord --> PayoutStatus
+MemberProfile "1" *-- "0..*" NotificationPreference
+
+DashboardController --> IDashboardService
+ProfileController --> IProfileService
+IDashboardService ..> IContributionRepository : uses
+IDashboardService ..> IPayoutRepository : uses
+IDashboardService ..> IFundHealthService : uses
+
+@enduml

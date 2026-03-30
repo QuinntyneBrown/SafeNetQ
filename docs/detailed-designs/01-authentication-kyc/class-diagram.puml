@@ -1,0 +1,168 @@
+@startuml class-diagram
+title Authentication & KYC -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Entities" {
+  class User {
+    +Id : Guid
+    +Email : string
+    +PasswordHash : string
+    +AccountStatus : AccountStatus
+    +Profile : UserProfile
+    +MfaConfig : MfaConfiguration
+    +CreatedAt : DateTime
+    +UpdatedAt : DateTime
+  }
+
+  class UserProfile {
+    +FullName : string
+    +DateOfBirth : DateOnly
+    +PhoneNumber : string
+    +Address : string
+  }
+
+  class KycVerification {
+    +Id : Guid
+    +UserId : Guid
+    +ProviderRef : string
+    +DocumentType : string
+    +Status : KycStatus
+    +Score : decimal
+    +SubmittedAt : DateTime
+    +ReviewedAt : DateTime?
+    +ExpiresAt : DateTime?
+  }
+
+  class MfaConfiguration {
+    +Method : MfaMethod
+    +SecretEncrypted : byte[]
+    +Enabled : bool
+    +BackupCodes : List<string>
+  }
+
+  enum AccountStatus {
+    Unverified
+    EmailVerified
+    KycPending
+    KycVerified
+    Active
+    Suspended
+    Locked
+  }
+
+  enum KycStatus {
+    Pending
+    Approved
+    Rejected
+    Expired
+  }
+
+  enum MfaMethod {
+    None
+    TOTP
+    SMS
+  }
+}
+
+package "Interfaces" {
+  interface IAuthService {
+    +RegisterAsync(req) : Task<RegisterResponse>
+    +LoginAsync(req) : Task<LoginResponse>
+    +RefreshTokenAsync(token) : Task<TokenPair>
+    +LogoutAsync(userId) : Task
+    +ResetPasswordAsync(email) : Task
+  }
+
+  interface IKycService {
+    +SubmitAsync(dto) : Task<KycStatusResponse>
+    +CheckStatusAsync(userId) : Task<KycStatusResponse>
+    +GetHistoryAsync(userId) : Task<List<KycVerification>>
+  }
+
+  interface IUserRepository {
+    +GetByIdAsync(id) : Task<User>
+    +GetByEmailAsync(email) : Task<User>
+    +AddAsync(user) : Task
+    +UpdateAsync(user) : Task
+  }
+
+  interface ITokenService {
+    +GenerateAccessToken(user) : string
+    +GenerateRefreshToken() : RefreshToken
+    +ValidateRefreshToken(token) : bool
+    +RevokeAllTokens(userId) : Task
+  }
+
+  interface IMfaProvider {
+    +VerifyCode(secret, code) : bool
+    +SendSmsCode(phone) : Task<string>
+    +GenerateBackupCodes() : List<string>
+  }
+
+  interface IKycProvider {
+    +SubmitDocumentAsync(dto) : Task<string>
+    +GetResultAsync(ref) : Task<KycResult>
+  }
+}
+
+package "Controllers" {
+  class AuthController {
+    +Register(req) : IActionResult
+    +Login(req) : IActionResult
+    +Refresh(req) : IActionResult
+    +Logout() : IActionResult
+    +ResetPassword(req) : IActionResult
+  }
+
+  class KycController {
+    +Submit(dto) : IActionResult
+    +GetStatus() : IActionResult
+    +GetHistory() : IActionResult
+  }
+}
+
+package "DTOs" {
+  class RegisterRequest {
+    +Email : string
+    +Password : string
+    +FullName : string
+    +DateOfBirth : DateOnly
+    +PhoneNumber : string
+  }
+
+  class LoginRequest {
+    +Email : string
+    +Password : string
+    +DeviceFingerprint : string
+  }
+
+  class KycSubmissionDto {
+    +DocumentType : string
+    +FrontImageBase64 : string
+    +BackImageBase64 : string
+    +SelfieImageBase64 : string
+  }
+}
+
+User "1" *-- "1" UserProfile
+User "1" *-- "0..1" MfaConfiguration
+User "1" -- "0..*" KycVerification
+User --> AccountStatus
+KycVerification --> KycStatus
+MfaConfiguration --> MfaMethod
+
+AuthController --> IAuthService
+KycController --> IKycService
+IAuthService ..> IUserRepository : uses
+IAuthService ..> ITokenService : uses
+IAuthService ..> IMfaProvider : uses
+IKycService ..> IKycProvider : uses
+IKycService ..> IUserRepository : uses
+
+@enduml

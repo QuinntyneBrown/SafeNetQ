@@ -1,0 +1,44 @@
+@startuml sequence-setup-payment
+skinparam dpi 150
+skinparam defaultFontSize 10
+skinparam sequenceMessageAlign center
+
+title Adding a Payment Method via Stripe
+
+actor Member
+participant "Frontend" as FE
+participant "ContributionController" as CC
+participant "PaymentService" as PS
+participant "Stripe API" as Stripe
+database "Database" as DB
+
+Member -> FE : Enter payment details
+FE -> Stripe : stripe.createPaymentMethod()\n(client-side tokenization)
+Stripe --> FE : paymentMethodId token
+
+FE -> CC : POST /api/contributions/payment-methods\n{type, stripeToken, setAsDefault}
+CC -> PS : AddPaymentMethod(memberId, request)
+
+PS -> Stripe : Attach PaymentMethod\nto Stripe Customer
+alt Stripe Customer exists
+  Stripe --> PS : OK
+else No Stripe Customer
+  PS -> Stripe : Create Customer
+  Stripe --> PS : customerId
+  PS -> Stripe : Attach PaymentMethod
+  Stripe --> PS : OK
+end
+
+PS -> DB : Save PaymentMethod record\n(id, memberId, type, stripeId, last4)
+
+alt setAsDefault == true
+  PS -> DB : Update default flag
+  PS -> Stripe : Set default PaymentMethod\non Customer
+  Stripe --> PS : OK
+end
+
+PS --> CC : PaymentMethod entity
+CC --> FE : 201 Created {id, type, last4, isDefault}
+FE --> Member : "Payment method added"
+
+@enduml

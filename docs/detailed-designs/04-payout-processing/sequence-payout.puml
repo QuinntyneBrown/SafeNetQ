@@ -1,0 +1,96 @@
+@startuml sequence-payout
+skinparam defaultFontSize 11
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+skinparam maxMessageSize 160
+
+title Payout Execution Flow
+
+actor Member
+participant "Assistance\nRequest Service" as ARS
+participant "PayoutService" as PS
+participant "PayoutLimit\nEnforcer" as PLE
+participant "TrustAccount\nService" as TAS
+participant "PaymentGateway\nAdapter" as PGA
+participant "Transaction\nRecorder" as TR
+participant "Notification\nService" as NS
+database "Payout DB" as DB
+
+== Committee Approval ==
+
+ARS -> PS : RequestApproved event\n(requestId, memberId, amount, method)
+activate PS
+
+PS -> DB : Create Payout (state=Initiated)
+PS -> NS : Notify member: "Payout initiated"
+
+== Limits Validation ==
+
+PS -> PLE : Validate(memberId, amount)
+activate PLE
+PLE -> DB : Load PayoutLimit for member/tier
+PLE -> PLE : Check per-event cap
+PLE -> PLE : Check annual max (rolling 12m)
+PLE -> PLE : Check frequency (max 2/year)
+alt Limits Exceeded
+  PLE --> PS : LimitExceeded(reason)
+  PS -> DB : Update Payout (state=Failed, reason)
+  PS -> NS : Notify member: "Payout denied - limit exceeded"
+  deactivate PLE
+  deactivate PS
+else Limits OK
+  PLE --> PS : LimitStatusDto(eligible=true)
+  deactivate PLE
+  PS -> DB : Update Payout (state=LimitsValidated)
+
+  == Fund Reservation ==
+
+  PS -> TAS : ReserveFunds(amount, correlationId)
+  activate TAS
+  alt Insufficient Balance
+    TAS --> PS : false
+    PS -> DB : Update Payout (state=Failed, reason)
+    PS -> NS : Notify member: "Payout delayed - contact support"
+    deactivate TAS
+    deactivate PS
+  else Funds Available
+    TAS --> PS : true
+    deactivate TAS
+    PS -> DB : Update Payout (state=FundsReserved)
+
+    == Payment Dispatch ==
+
+    PS -> PGA : DispatchPayment(payout)
+    activate PGA
+    PS -> DB : Update Payout (state=Processing)
+    PS -> NS : Notify member: "Payout processing"
+    PGA --> PS : Accepted(gatewayRef)
+    deactivate PGA
+
+    ... 24-72 hours ...
+
+    == Gateway Callback ==
+
+    PGA -> PS : Callback(gatewayRef, status)
+    activate PS
+    alt Payment Successful
+      PS -> TAS : ConfirmWithdrawal(correlationId)
+      PS -> PLE : RecordUsage(memberId, amount)
+      PS -> TR : Record FundTransaction(debit, trust, amount)
+      activate TR
+      TR -> DB : Persist FundTransaction
+      TR -> TR : Publish AuditEvent
+      deactivate TR
+      PS -> DB : Update Payout (state=Completed, refNumber)
+      PS -> NS : Notify member: "Payout completed - $X deposited"
+      NS -> Member : Email + Push notification
+    else Payment Failed
+      PS -> TAS : ReleaseFunds(correlationId)
+      PS -> DB : Update Payout (state=Failed, reason)
+      PS -> NS : Notify member: "Payout failed - will retry"
+    end
+    deactivate PS
+  end
+end
+
+@enduml

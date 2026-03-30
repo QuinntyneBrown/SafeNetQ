@@ -1,0 +1,163 @@
+@startuml class-diagram
+!pragma layout smetana
+skinparam dpi 150
+skinparam classAttributeIconSize 0
+skinparam defaultFontSize 10
+skinparam wrapWidth 200
+skinparam pageMargin 10
+left to right direction
+
+package "Domain Entities" {
+  enum ContributionStatus {
+    Pending
+    Processing
+    Success
+    Failed
+    Retrying
+    Refunded
+  }
+
+  enum PaymentMethodType {
+    PAD
+    CreditCard
+    Interac
+  }
+
+  enum MembershipStanding {
+    Active
+    Suspended
+    Reinstated
+    Cancelled
+  }
+
+  class ContributionTier {
+    +Guid Id
+    +string Name
+    +decimal MonthlyAmount
+    +decimal TrustPercent = 0.85
+    +decimal ReservePercent = 0.10
+    +decimal PlatformFeePercent = 0.05
+    +bool IsActive
+    +DateTime CreatedAt
+  }
+
+  class PaymentMethod {
+    +Guid Id
+    +Guid MemberId
+    +PaymentMethodType Type
+    +string StripePaymentMethodId
+    +string Last4
+    +string Label
+    +bool IsDefault
+    +DateTime CreatedAt
+    +DateTime? RevokedAt
+  }
+
+  class Contribution {
+    +Guid Id
+    +Guid MemberId
+    +Guid ContributionTierId
+    +Guid PaymentMethodId
+    +Guid BillingCycleId
+    +decimal Amount
+    +decimal TrustAmount
+    +decimal ReserveAmount
+    +decimal PlatformFeeAmount
+    +ContributionStatus Status
+    +string? StripePaymentIntentId
+    +int RetryCount
+    +DateTime DueDate
+    +DateTime? PaidAt
+    +string? FailureReason
+    +DateTime CreatedAt
+  }
+
+  class BillingCycle {
+    +Guid Id
+    +Guid MemberId
+    +int BillingDay
+    +DateTime CurrentPeriodStart
+    +DateTime CurrentPeriodEnd
+    +MembershipStanding Standing
+    +int ConsecutiveFailures
+    +DateTime CreatedAt
+  }
+}
+
+package "DTOs" {
+  class SetupPaymentMethodRequest {
+    +PaymentMethodType Type
+    +string StripeToken
+    +bool SetAsDefault
+  }
+
+  class ChangeTierRequest {
+    +Guid NewTierId
+  }
+
+  class ContributionHistoryResponse {
+    +List<ContributionDto> Items
+    +int TotalCount
+    +int Page
+    +int PageSize
+  }
+
+  class ContributionDto {
+    +Guid Id
+    +decimal Amount
+    +string TierName
+    +ContributionStatus Status
+    +DateTime DueDate
+    +DateTime? PaidAt
+    +string ReceiptUrl
+  }
+}
+
+package "Interfaces" {
+  interface IContributionService {
+    +Task<ContributionDto> GetById(Guid id)
+    +Task<ContributionHistoryResponse> GetHistory(Guid memberId, HistoryFilter filter)
+    +Task ChangeTier(Guid memberId, ChangeTierRequest req)
+    +Task<byte[]> GenerateReceipt(Guid contributionId)
+    +Task<byte[]> ExportHistoryCsv(Guid memberId, HistoryFilter filter)
+  }
+
+  interface IPaymentService {
+    +Task<PaymentMethod> AddPaymentMethod(Guid memberId, SetupPaymentMethodRequest req)
+    +Task RemovePaymentMethod(Guid memberId, Guid paymentMethodId)
+    +Task SetDefaultPaymentMethod(Guid memberId, Guid paymentMethodId)
+    +Task<PaymentResult> ChargeContribution(Contribution contribution)
+  }
+
+  interface IBillingScheduler {
+    +Task ProcessDueContributions(DateTime asOfDate)
+    +Task RetryFailedContributions()
+  }
+
+  interface IReceiptGenerator {
+    +Task<byte[]> Generate(Contribution contribution)
+  }
+}
+
+class ContributionController {
+  -IContributionService _contributionService
+  -IPaymentService _paymentService
+  +Task<IActionResult> GetHistory(HistoryFilter filter)
+  +Task<IActionResult> ChangeTier(ChangeTierRequest req)
+  +Task<IActionResult> AddPaymentMethod(SetupPaymentMethodRequest req)
+  +Task<IActionResult> RemovePaymentMethod(Guid id)
+  +Task<IActionResult> DownloadReceipt(Guid contributionId)
+  +Task<IActionResult> ExportCsv(HistoryFilter filter)
+}
+
+Contribution --> ContributionTier
+Contribution --> PaymentMethod
+Contribution --> BillingCycle
+BillingCycle --> PaymentMethod
+ContributionController --> IContributionService
+ContributionController --> IPaymentService
+IContributionService ..> ContributionDto
+IContributionService ..> ContributionHistoryResponse
+IPaymentService ..> SetupPaymentMethodRequest
+
+@enduml

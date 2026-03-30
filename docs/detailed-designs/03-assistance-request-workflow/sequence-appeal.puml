@@ -1,0 +1,122 @@
+@startuml sequence-appeal
+!theme plain
+skinparam sequenceMessageAlign center
+
+title Assistance Request -- Appeal Sequence
+
+actor Member
+participant "Web / Mobile UI" as UI
+participant "API Gateway" as API
+participant "AppealService" as AS
+participant "CommitteeReviewService" as CRS
+participant "VotingService" as VS
+participant "Document Vault\n(Storage)" as DV
+participant "Notification Service" as NS
+database "PostgreSQL" as DB
+
+== Check Appeal Window ==
+
+Member -> UI : View denied request detail
+UI -> API : GET /api/v1/assistance/requests/{id}
+API -> AS : IsAppealWindowOpen(requestId)
+AS -> DB : Fetch request (status, decisionAt)
+DB --> AS : Request data
+
+AS -> AS : Check Status == Denied\nand now() < decisionAt + 14 days
+
+alt Appeal window closed
+    AS --> API : false
+    API --> UI : No "Appeal" button shown
+    UI --> Member : Appeal window has expired
+else Appeal window open
+    AS --> API : true
+    API --> UI : Show "Appeal" button
+end
+
+== Submit Appeal ==
+
+Member -> UI : Click "Appeal", enter explanation,\nupload additional documents
+UI -> API : POST /api/v1/assistance/requests/{id}/appeal\n{ explanation }
+API -> AS : SubmitAppeal(requestId, dto)
+
+AS -> DB : Verify no existing appeal\nfor this request
+DB --> AS : No prior appeal
+
+AS -> DB : INSERT Appeal\n{ requestId, status=Submitted,\nexplanation, submittedAt }
+DB --> AS : Appeal with ID
+
+AS --> API : 201 Created { appealId }
+API --> UI : Appeal submitted
+
+== Upload Additional Documents ==
+
+loop For each additional document
+    UI -> API : POST /api/v1/appeals/{id}/documents\n[multipart file upload]
+    API -> DV : Upload file (AES-256 encrypted)
+    DV --> API : StorageKey
+    API -> DB : INSERT RequestDocument\n{ appealId, fileName, storageKey }
+    DB --> API : Saved
+    API --> UI : Document uploaded
+end
+
+Member -> UI : Finalize appeal submission
+UI -> API : POST /api/v1/appeals/{id}/finalize
+API -> AS : FinalizeSubmission(appealId)
+
+== Assign Appeal Panel ==
+
+AS -> CRS : AssignAppealPanel(appealId)
+
+CRS -> DB : Fetch original reviewers\nfor this request
+DB --> CRS : Original reviewer IDs
+
+CRS -> DB : Fetch all active committee members
+DB --> CRS : Committee roster
+
+CRS -> CRS : Exclude original reviewers\nand conflicted members
+
+CRS -> CRS : Select 5 different reviewers
+
+loop For each appeal reviewer
+    CRS -> DB : INSERT ReviewAssignment\n{ appealId, committeeMemberId,\ndeadline = now()+48h }
+    DB --> CRS : Saved
+    CRS -> NS : Notify "Appeal review assigned"
+end
+
+AS -> DB : UPDATE Appeal\nSET Status = UnderReview
+DB --> AS : Updated
+
+AS -> NS : Notify member\n"Your appeal is under review\nby a new panel"
+
+== Appeal Panel Review & Vote ==
+
+note over CRS, VS
+    Appeal review follows the same voting process
+    as the original committee review (see
+    sequence-committee-review.puml).
+    Majority vote (3 of 5) determines outcome.
+end note
+
+... Appeal panel members review and vote ...
+
+VS -> VS : TallyVotes(appealId)
+
+alt Majority = Approve (Overturn denial)
+    VS -> AS : FinalizeAppealDecision(appealId)
+    AS -> DB : UPDATE Appeal\nSET Status = Overturned,\nDecisionAt = now(),\nDecisionReason = reason
+    AS -> DB : UPDATE AssistanceRequest\nSET Status = AppealApproved,\nApprovedAmount = requestedAmount
+    DB --> AS : Updated
+
+    AS -> NS : Notify member\n"Your appeal was successful!\nPayout will be processed\nwithin 48-72 hours."
+    note right : Triggers Payout Processing (L1-4)
+
+else Majority = Deny (Uphold original denial)
+    VS -> AS : FinalizeAppealDecision(appealId)
+    AS -> DB : UPDATE Appeal\nSET Status = Upheld,\nDecisionAt = now(),\nDecisionReason = reason
+    AS -> DB : UPDATE AssistanceRequest\nSET Status = AppealDenied
+    DB --> AS : Updated
+
+    AS -> NS : Notify member\n"Your appeal was reviewed and\nthe original decision was upheld.\nThis decision is final."
+end
+
+@enduml

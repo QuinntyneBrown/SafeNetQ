@@ -1,0 +1,85 @@
+@startuml sequence-submit-request
+!theme plain
+skinparam sequenceMessageAlign center
+
+title Assistance Request -- Submit Request Sequence
+
+actor Member
+participant "Web / Mobile UI" as UI
+participant "API Gateway" as API
+participant "AssistanceRequestService" as ARS
+participant "EligibilityValidator" as EV
+participant "Document Vault\n(Storage)" as DV
+participant "Notification Service" as NS
+database "PostgreSQL" as DB
+
+== Eligibility Check ==
+
+Member -> UI : Open "Request Assistance" page
+UI -> API : GET /api/v1/assistance/eligibility
+API -> ARS : CheckEligibility(memberId)
+ARS -> EV : Validate(memberId)
+
+EV -> DB : Fetch member profile,\nKYC status, contributions,\npayout history
+DB --> EV : Member data
+
+EV -> EV : Check KYC complete
+EV -> EV : Check waiting period (3 months)
+EV -> EV : Check contributions current
+EV -> EV : Check annual payout limit\nnot exceeded
+
+alt Ineligible
+    EV --> ARS : EligibilityResult { IsEligible=false, Reasons }
+    ARS --> API : 200 OK with reasons
+    API --> UI : Display ineligibility reasons
+    UI --> Member : "You are not eligible because..."
+else Eligible
+    EV --> ARS : EligibilityResult { IsEligible=true }
+    ARS --> API : 200 OK
+    API --> UI : Show request form
+end
+
+== Draft Creation ==
+
+Member -> UI : Select category, enter description,\nupload documents (max 5, max 10MB each)
+
+UI -> API : POST /api/v1/assistance/requests\n{ category, description, requestedAmount }
+API -> ARS : CreateDraft(memberId, dto)
+ARS -> DB : INSERT AssistanceRequest\n(Status = Draft)
+DB --> ARS : Request with ID
+ARS --> API : 201 Created { requestId }
+API --> UI : Draft created
+
+== Document Upload ==
+
+loop For each document (max 5)
+    UI -> API : POST /api/v1/assistance/requests/{id}/documents\n[multipart file upload]
+    API -> DV : Upload file (AES-256 encrypted)
+    DV --> API : StorageKey
+    API -> DB : INSERT RequestDocument\n{ fileName, contentType, storageKey }
+    DB --> API : Saved
+    API --> UI : Document uploaded
+end
+
+== Submission ==
+
+Member -> UI : Click "Submit Request"
+UI -> API : POST /api/v1/assistance/requests/{id}/submit
+API -> ARS : SubmitRequest(requestId)
+
+ARS -> EV : Validate(memberId)
+note right : Re-validate at submission time
+EV --> ARS : EligibilityResult { IsEligible=true }
+
+ARS -> ARS : Validate description present,\nat least 1 document uploaded
+ARS -> DB : UPDATE AssistanceRequest\nSET Status = Submitted,\nSubmittedAt = now()
+DB --> ARS : Updated
+
+ARS -> NS : SendNotification(\nmemberId,\n"Request Submitted",\nrequestId)
+NS --> ARS : Queued
+
+ARS --> API : 200 OK { requestId, status: "Submitted" }
+API --> UI : Confirmation page
+UI --> Member : "Request #12345 submitted.\nYou will be notified of updates."
+
+@enduml

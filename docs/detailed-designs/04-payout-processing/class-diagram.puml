@@ -1,0 +1,151 @@
+@startuml class-diagram
+skinparam classAttributeIconSize 0
+skinparam defaultFontSize 11
+skinparam classFontSize 12
+skinparam packageFontSize 12
+skinparam shadowing false
+skinparam linetype ortho
+left to right direction
+
+package "Payout Domain" {
+  enum PayoutMethod {
+    DirectDeposit
+    InteracETransfer
+  }
+
+  enum PayoutState {
+    Initiated
+    LimitsValidated
+    FundsReserved
+    Processing
+    Completed
+    Failed
+    Reversed
+  }
+
+  class Payout <<Aggregate Root>> {
+    - payoutId : Guid
+    - assistanceRequestId : Guid
+    - memberId : Guid
+    - amount : decimal
+    - method : PayoutMethod
+    - state : PayoutState
+    - referenceNumber : string
+    - createdAt : DateTime
+    - completedAt : DateTime?
+    - failureReason : string?
+    + Initiate() : void
+    + MarkLimitsValidated() : void
+    + ReserveFunds() : void
+    + MarkProcessing() : void
+    + Complete(refNumber) : void
+    + Fail(reason) : void
+    + Reverse(reason) : void
+  }
+
+  class PayoutLimit <<Value Object>> {
+    - memberId : Guid
+    - tier : ContributionTier
+    - perEventMax : decimal
+    - annualMax : decimal
+    - frequencyMax : int
+    - usedAnnual : decimal
+    - usedFrequency : int
+    + RemainingAnnual() : decimal
+    + RemainingFrequency() : int
+    + CanPay(amount) : bool
+  }
+
+  class FundTransaction <<Entity>> {
+    - transactionId : Guid
+    - payoutId : Guid
+    - amount : decimal
+    - direction : TransactionDirection
+    - sourceAccount : AccountType
+    - timestamp : DateTime
+    - correlationId : string
+    - description : string
+  }
+
+  enum TransactionDirection {
+    Debit
+    Credit
+  }
+
+  enum AccountType {
+    MemberTrust
+    Reserve
+    Operating
+  }
+}
+
+package "DTOs" {
+  class PayoutRequestDto {
+    + assistanceRequestId : Guid
+    + memberId : Guid
+    + amount : decimal
+    + method : PayoutMethod
+  }
+
+  class PayoutResponseDto {
+    + payoutId : Guid
+    + state : PayoutState
+    + referenceNumber : string?
+    + estimatedCompletionDate : DateTime?
+  }
+
+  class PayoutLimitStatusDto {
+    + perEventMax : decimal
+    + annualRemaining : decimal
+    + frequencyRemaining : int
+    + eligible : bool
+  }
+}
+
+package "Service Interfaces" {
+  interface IPayoutService {
+    + InitiatePayout(dto : PayoutRequestDto) : PayoutResponseDto
+    + GetPayoutStatus(payoutId : Guid) : PayoutResponseDto
+    + HandleGatewayCallback(ref, status) : void
+  }
+
+  interface IPayoutLimitEnforcer {
+    + Validate(memberId, amount) : PayoutLimitStatusDto
+    + RecordUsage(memberId, amount) : void
+  }
+
+  interface ITransactionRecorder {
+    + Record(transaction : FundTransaction) : void
+    + GetByPayout(payoutId : Guid) : List<FundTransaction>
+  }
+
+  interface IPaymentGatewayAdapter {
+    + DispatchPayment(payout : Payout) : GatewayResult
+    + CheckStatus(referenceNumber) : GatewayStatus
+  }
+
+  interface ITrustAccountService {
+    + GetBalance() : decimal
+    + ReserveFunds(amount, correlationId) : bool
+    + ReleaseFunds(correlationId) : void
+    + ConfirmWithdrawal(correlationId) : void
+  }
+}
+
+Payout --> PayoutMethod
+Payout --> PayoutState
+Payout "1" --> "1..*" FundTransaction
+FundTransaction --> TransactionDirection
+FundTransaction --> AccountType
+PayoutLimit --> Payout : constrains
+
+IPayoutService ..> Payout
+IPayoutService ..> PayoutRequestDto
+IPayoutService ..> PayoutResponseDto
+IPayoutLimitEnforcer ..> PayoutLimit
+IPayoutLimitEnforcer ..> PayoutLimitStatusDto
+ITransactionRecorder ..> FundTransaction
+IPaymentGatewayAdapter ..> Payout
+ITrustAccountService ..> FundTransaction
+
+@enduml

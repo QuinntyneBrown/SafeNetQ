@@ -1,0 +1,23 @@
+@startuml state-contribution
+skinparam dpi 150
+skinparam defaultFontSize 10
+
+title Contribution Lifecycle States
+
+[*] --> Pending : Billing cycle due date reached
+
+Pending --> Processing : Payment initiated\nvia Stripe
+
+Processing --> Success : Stripe confirms\npayment
+Processing --> Failed : Stripe returns\nerror
+
+Failed --> Retrying : retryCount < 3\n(retry in +2 days)
+Retrying --> Processing : Retry attempt\ninitiated
+
+Failed --> [*] : retryCount >= 3\n(membership suspended)
+
+Success --> Refunded : Admin-initiated\nrefund
+Success --> [*]
+Refunded --> [*]
+
+@enduml

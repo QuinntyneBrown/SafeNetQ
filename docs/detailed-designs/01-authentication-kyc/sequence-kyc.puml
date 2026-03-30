@@ -1,0 +1,62 @@
+@startuml sequence-kyc
+title KYC Identity Verification Flow
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+
+actor "User" as user
+participant "Client" as client
+participant "KycController" as ctrl
+participant "KycService" as svc
+participant "KycProvider\n(Jumio/Onfido)" as provider
+participant "UserRepository" as urepo
+database "PostgreSQL" as db
+
+user -> client : Upload ID photos + selfie
+client -> ctrl : POST /api/kyc/submit\n{docType, frontImg, backImg, selfieImg}
+activate ctrl
+
+ctrl -> ctrl : Validate user is EmailVerified
+ctrl -> svc : SubmitAsync(userId, KycSubmissionDto)
+activate svc
+
+svc -> svc : Validate file sizes & formats
+svc -> provider : SubmitDocumentAsync(images, metadata)
+activate provider
+provider --> svc : providerRef = "JUM-abc123"
+deactivate provider
+
+svc -> db : INSERT KycVerification\n{userId, providerRef, status=Pending}
+svc -> urepo : Update user status -> KycPending
+svc --> ctrl : KycStatusResponse\n{status=Pending}
+deactivate svc
+
+ctrl --> client : 202 Accepted {status=Pending}
+deactivate ctrl
+client --> user : "Verification in progress"
+
+== Async webhook callback (minutes to hours) ==
+
+provider -> ctrl : POST /api/kyc/webhook\n{ref, result, score}
+activate ctrl
+ctrl -> svc : ProcessWebhookAsync(payload)
+activate svc
+
+svc -> svc : Validate webhook signature
+
+alt KYC Approved (score >= threshold)
+  svc -> db : UPDATE KycVerification\nstatus=Approved, score
+  svc -> urepo : Update user status -> KycVerified
+  svc -> svc : Dispatch KycApprovedEvent
+else KYC Rejected
+  svc -> db : UPDATE KycVerification\nstatus=Rejected, score
+  svc -> svc : Dispatch KycRejectedEvent\n(user may retry)
+end
+
+svc --> ctrl : OK
+deactivate svc
+ctrl --> provider : 200 OK
+deactivate ctrl
+
+@enduml
