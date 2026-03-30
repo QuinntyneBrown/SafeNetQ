@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+COPY SafeNetQ.sln .
+COPY SafeNetQ.Domain/*.csproj SafeNetQ.Domain/
+COPY SafeNetQ.Application/*.csproj SafeNetQ.Application/
+COPY SafeNetQ.Infrastructure/*.csproj SafeNetQ.Infrastructure/
+COPY SafeNetQ.API/*.csproj SafeNetQ.API/
+COPY SafeNetQ.Shared/*.csproj SafeNetQ.Shared/
+RUN dotnet restore
+
+COPY . .
+RUN dotnet publish SafeNetQ.API/SafeNetQ.API.csproj -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+COPY --from=build /app/publish .
+
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "SafeNetQ.API.dll"]
