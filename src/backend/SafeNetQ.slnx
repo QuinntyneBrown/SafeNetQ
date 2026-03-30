@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="SafeNetQ.API/SafeNetQ.API.csproj" />
+  <Project Path="SafeNetQ.Application/SafeNetQ.Application.csproj" />
+  <Project Path="SafeNetQ.Domain/SafeNetQ.Domain.csproj" />
+  <Project Path="SafeNetQ.Infrastructure/SafeNetQ.Infrastructure.csproj" />
+  <Project Path="SafeNetQ.Shared/SafeNetQ.Shared.csproj" />
+</Solution>

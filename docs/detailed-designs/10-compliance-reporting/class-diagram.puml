@@ -1,0 +1,185 @@
+@startuml class-diagram
+title Compliance & Reporting -- Class Diagram
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Entities" {
+  class SuspiciousTransactionReport {
+    +Id : Guid
+    +SubjectMemberId : Guid
+    +TransactionIds : List<Guid>
+    +Indicators : List<string>
+    +Narrative : string
+    +FilingStatus : FilingStatus
+    +FintracRef : string?
+    +CreatedBy : Guid
+    +CreatedAt : DateTime
+    +FiledAt : DateTime?
+  }
+
+  class LargeCashTransactionReport {
+    +Id : Guid
+    +TransactionId : Guid
+    +Amount : decimal
+    +PartyName : string
+    +FilingStatus : FilingStatus
+    +FintracRef : string?
+    +CreatedAt : DateTime
+  }
+
+  class DetectionRule {
+    +Id : Guid
+    +Name : string
+    +Description : string
+    +ConditionExpression : string
+    +Severity : Severity
+    +IsEnabled : bool
+  }
+
+  class DetectionAlert {
+    +Id : Guid
+    +RuleId : Guid
+    +TransactionIds : List<Guid>
+    +Severity : Severity
+    +ReviewStatus : ReviewStatus
+    +ReviewedBy : Guid?
+    +CreatedAt : DateTime
+  }
+
+  class FinancialReport {
+    +Id : Guid
+    +ReportType : ReportType
+    +PeriodStart : DateTime
+    +PeriodEnd : DateTime
+    +FilePath : string
+    +GeneratedAt : DateTime
+    +GeneratedBy : Guid
+  }
+
+  class ConsentRecord {
+    +Id : Guid
+    +MemberId : Guid
+    +Purpose : string
+    +GrantedAt : DateTime
+    +RevokedAt : DateTime?
+  }
+
+  class DataRequest {
+    +Id : Guid
+    +MemberId : Guid
+    +RequestType : DataRequestType
+    +Status : RequestStatus
+    +RequestedAt : DateTime
+    +CompletedAt : DateTime?
+  }
+
+  enum FilingStatus {
+    Draft
+    UnderReview
+    Filed
+    Acknowledged
+  }
+
+  enum Severity {
+    Low
+    Medium
+    High
+    Critical
+  }
+
+  enum ReviewStatus {
+    Pending
+    Reviewed
+    Escalated
+    Dismissed
+  }
+
+  enum ReportType {
+    Monthly
+    Annual
+  }
+
+  enum DataRequestType {
+    Access
+    Deletion
+  }
+
+  enum RequestStatus {
+    Pending
+    InProgress
+    Completed
+    Rejected
+  }
+}
+
+package "Interfaces" {
+  interface IDetectionService {
+    +EvaluateAsync(transaction) : Task<List<DetectionAlert>>
+    +GetAlertsAsync(filter) : Task<PagedResult>
+    +ReviewAlertAsync(alertId, status) : Task
+  }
+
+  interface IStrService {
+    +CreateAsync(req) : Task<SuspiciousTransactionReport>
+    +UpdateAsync(id, req) : Task
+    +FileAsync(id) : Task
+    +GetHistoryAsync(filter) : Task<PagedResult>
+  }
+
+  interface IFinancialReportService {
+    +GenerateMonthlyAsync(period) : Task<FinancialReport>
+    +GenerateAnnualAsync(year) : Task<FinancialReport>
+    +GetReportsAsync(filter) : Task<PagedResult>
+  }
+
+  interface IPrivacyService {
+    +HandleAccessRequestAsync(memberId) : Task<DataRequest>
+    +HandleDeletionRequestAsync(memberId) : Task<DataRequest>
+    +RecordConsentAsync(memberId, purpose) : Task
+  }
+
+  interface IFintracExporter {
+    +ExportStrXmlAsync(str) : Task<byte[]>
+    +ExportLctrXmlAsync(lctr) : Task<byte[]>
+  }
+}
+
+package "Controllers" {
+  class ComplianceController {
+    +GetAlerts(filter) : IActionResult
+    +GetStrs(filter) : IActionResult
+    +CreateStr(req) : IActionResult
+    +FileStr(id) : IActionResult
+  }
+
+  class ReportController {
+    +GetReports(filter) : IActionResult
+    +Generate(req) : IActionResult
+    +Download(id) : IActionResult
+  }
+}
+
+SuspiciousTransactionReport --> FilingStatus
+LargeCashTransactionReport --> FilingStatus
+DetectionRule --> Severity
+DetectionAlert --> Severity
+DetectionAlert --> ReviewStatus
+FinancialReport --> ReportType
+DataRequest --> DataRequestType
+DataRequest --> RequestStatus
+
+DetectionAlert "0..*" -- "1" DetectionRule
+SuspiciousTransactionReport "0..1" -- "1" DetectionAlert : escalated from
+
+ComplianceController --> IDetectionService
+ComplianceController --> IStrService
+ReportController --> IFinancialReportService
+IStrService ..> IFintracExporter : uses
+IDetectionService ..> DetectionRule : evaluates
+
+@enduml

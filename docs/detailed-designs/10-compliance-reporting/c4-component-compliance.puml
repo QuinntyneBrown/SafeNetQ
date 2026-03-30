@@ -1,0 +1,43 @@
+@startuml c4-component-compliance
+!include <C4/C4_Component>
+
+title C4 Component Diagram -- Compliance & Reporting
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+Person(compOfficer, "Compliance Officer", "Reviews alerts, files STRs")
+Person(auditor, "Auditor", "Views reports and audit trail")
+
+System_Boundary(compliance, "Compliance & Reporting Bounded Context") {
+  Component(compCtrl, "ComplianceController", "ASP.NET Core", "Alert review, STR CRUD, filing endpoints")
+  Component(reportCtrl, "ReportController", "ASP.NET Core", "Report listing, generation trigger, download")
+  Component(privacyCtrl, "PrivacyController", "ASP.NET Core", "PIPEDA data access and deletion requests")
+  Component(detectionSvc, "DetectionService", ".NET Service", "Evaluates transactions against configurable rules")
+  Component(strSvc, "StrService", ".NET Service", "STR lifecycle: draft, review, file, acknowledge")
+  Component(reportSvc, "FinancialReportService", ".NET + QuestPDF", "Generates monthly/annual PDF reports")
+  Component(privacySvc, "PrivacyService", ".NET Service", "PIPEDA workflows: export, delete, breach notify")
+  Component(exporter, "FintracExporter", ".NET Service", "Exports STR/LCTR in FINTRAC XML format")
+  Component(detectionWorker, "DetectionWorker", "Hangfire Job", "Nightly batch scan for suspicious patterns")
+}
+
+ContainerDb(postgres, "PostgreSQL", "Database", "STRs, alerts, rules, reports, consent, data requests")
+Container(eventBus, "Event Bus", "RabbitMQ", "TransactionCompleted events")
+System_Ext(fintrac, "FINTRAC", "Receives STR and LCTR filings")
+
+Rel(compOfficer, compCtrl, "Reviews alerts, files STRs", "HTTPS/JSON")
+Rel(auditor, reportCtrl, "Downloads reports", "HTTPS/JSON")
+Rel(compCtrl, detectionSvc, "Delegates alert queries")
+Rel(compCtrl, strSvc, "Delegates STR operations")
+Rel(reportCtrl, reportSvc, "Delegates report generation")
+Rel(privacyCtrl, privacySvc, "Delegates privacy requests")
+Rel(eventBus, detectionSvc, "Transaction events")
+Rel(detectionWorker, detectionSvc, "Batch evaluation")
+Rel(strSvc, exporter, "Exports FINTRAC format")
+Rel(exporter, fintrac, "Files reports")
+Rel(detectionSvc, postgres, "Reads rules, writes alerts")
+Rel(strSvc, postgres, "Reads/writes STRs")
+Rel(reportSvc, postgres, "Reads financial data")
+Rel(privacySvc, postgres, "Reads/writes requests")
+
+@enduml
