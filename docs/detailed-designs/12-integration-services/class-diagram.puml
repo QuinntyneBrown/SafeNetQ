@@ -1,0 +1,133 @@
+@startuml class-diagram
+title Integration Services -- Adapters and Ports
+
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 60
+skinparam ranksep 40
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+package "Domain Ports (Interfaces)" {
+  interface IPaymentGateway {
+    +CreateCustomerAsync(member) : Task<string>
+    +SetupPadAsync(customerId, bankInfo) : Task<string>
+    +ChargeCardAsync(customerId, amount) : Task<PaymentResult>
+    +InitiatePayoutAsync(memberId, amount) : Task<PayoutResult>
+    +GetPaymentStatusAsync(paymentId) : Task<PaymentStatus>
+  }
+
+  interface IIdentityVerifier {
+    +InitiateVerificationAsync(memberId) : Task<VerificationSession>
+    +GetResultAsync(sessionId) : Task<VerificationResult>
+    +HandleWebhookAsync(payload, sig) : Task
+  }
+
+  interface IEmailSender {
+    +SendTemplatedEmailAsync(to, templateId, vars) : Task<string>
+    +GetDeliveryStatusAsync(messageId) : Task<DeliveryStatus>
+  }
+
+  interface ISmsSender {
+    +SendSmsAsync(to, body) : Task<string>
+    +GetDeliveryStatusAsync(sid) : Task<DeliveryStatus>
+  }
+
+  interface IObjectStorage {
+    +PutObjectAsync(key, stream, contentType) : Task
+    +GetPresignedUrlAsync(key, expiry) : Task<string>
+    +DeleteObjectAsync(key) : Task
+  }
+}
+
+package "Infrastructure Adapters" {
+  class StripePaymentAdapter {
+    -_stripeClient : StripeClient
+    -_retryPolicy : IAsyncPolicy
+  }
+
+  class JumioIdentityAdapter {
+    -_jumioClient : JumioClient
+    -_retryPolicy : IAsyncPolicy
+  }
+
+  class SendGridEmailAdapter {
+    -_sgClient : SendGridClient
+    -_retryPolicy : IAsyncPolicy
+  }
+
+  class TwilioSmsAdapter {
+    -_twilioClient : TwilioRestClient
+    -_retryPolicy : IAsyncPolicy
+  }
+
+  class S3StorageAdapter {
+    -_s3Client : IAmazonS3
+    -_bucketName : string
+    -_retryPolicy : IAsyncPolicy
+  }
+}
+
+package "Webhook Handlers" {
+  class StripeWebhookHandler {
+    +HandleAsync(payload, signature) : Task
+    -VerifySignature(payload, sig) : bool
+    -ProcessPaymentSuccess(event) : Task
+    -ProcessPaymentFailure(event) : Task
+    -ProcessDispute(event) : Task
+  }
+
+  class JumioWebhookHandler {
+    +HandleAsync(payload, signature) : Task
+    -VerifyHmac(payload, sig) : bool
+    -ProcessVerificationResult(event) : Task
+  }
+
+  class SendGridWebhookHandler {
+    +HandleAsync(events) : Task
+    -ProcessBounce(event) : Task
+    -ProcessUnsubscribe(event) : Task
+  }
+}
+
+package "Shared" {
+  class ResilienceConfig {
+    +RetryCount : int
+    +RetryBackoffBase : TimeSpan
+    +CircuitBreakerThreshold : int
+    +CircuitBreakerWindow : TimeSpan
+    +Timeout : TimeSpan
+  }
+
+  enum PaymentStatus {
+    Pending
+    Succeeded
+    Failed
+    Disputed
+  }
+
+  enum DeliveryStatus {
+    Queued
+    Sent
+    Delivered
+    Bounced
+    Failed
+  }
+}
+
+StripePaymentAdapter ..|> IPaymentGateway
+JumioIdentityAdapter ..|> IIdentityVerifier
+SendGridEmailAdapter ..|> IEmailSender
+TwilioSmsAdapter ..|> ISmsSender
+S3StorageAdapter ..|> IObjectStorage
+
+StripeWebhookHandler ..> StripePaymentAdapter : uses
+JumioWebhookHandler ..> JumioIdentityAdapter : uses
+
+StripePaymentAdapter --> ResilienceConfig
+JumioIdentityAdapter --> ResilienceConfig
+SendGridEmailAdapter --> ResilienceConfig
+TwilioSmsAdapter --> ResilienceConfig
+S3StorageAdapter --> ResilienceConfig
+
+@enduml

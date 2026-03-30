@@ -1,0 +1,68 @@
+@startuml sequence-stripe-webhook
+title Integration Services -- Processing Stripe Webhook Events
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 200
+
+participant "Stripe" as Stripe
+participant "WebhookController" as WC
+participant "StripeWebhookHandler" as SWH
+participant "StripePaymentAdapter" as SPA
+participant "ContributionService" as CS
+participant "NotificationService" as NS
+database "PostgreSQL" as DB
+participant "Event Bus\n(RabbitMQ)" as Bus
+
+Stripe -> WC : POST /api/v1/webhooks/stripe\n[Stripe-Signature header]
+
+WC -> SWH : HandleAsync(payload, signature)
+
+SWH -> SWH : VerifySignature(\npayload, signature,\nwebhook secret)
+
+alt Signature invalid
+  SWH --> WC : throw InvalidSignatureException
+  WC --> Stripe : 401 Unauthorized
+else Signature valid
+  SWH -> DB : SELECT * FROM processed_events\nWHERE stripe_event_id = ?
+  alt Already processed (idempotency)
+    DB --> SWH : event found
+    SWH --> WC : OK (already processed)
+    WC --> Stripe : 200 OK
+  else New event
+    SWH -> SWH : Parse event type
+
+    alt payment_intent.succeeded
+      SWH -> CS : RecordSuccessAsync(\npaymentIntentId, amount)
+      CS -> DB : UPDATE contributions\nSET status = 'Success'
+      CS -> Bus : ContributionReceived event
+
+      SWH -> NS : SendAsync(\nContributionReceipt, memberId)
+
+    else payment_intent.payment_failed
+      SWH -> CS : RecordFailureAsync(\npaymentIntentId, reason)
+      CS -> DB : UPDATE contributions\nSET status = 'Failed',\nretry_count += 1
+
+      alt Retry count < 3
+        CS -> SPA : RetryChargeAsync(\ncustomerId, amount)
+        SPA -> Stripe : Create new PaymentIntent
+      else Max retries exceeded
+        CS -> DB : UPDATE memberships\nSET status = 'Suspended'
+        SWH -> NS : SendAsync(\nPaymentFailure, memberId)
+      end
+
+    else charge.dispute.created
+      SWH -> CS : RecordDisputeAsync(\nchargeId, reason)
+      CS -> DB : INSERT dispute record
+      SWH -> NS : SendAsync(\nDisputeAlert, adminIds)
+    end
+
+    SWH -> DB : INSERT processed_events\n(stripe_event_id, type, processed_at)
+
+    SWH --> WC : OK
+    WC --> Stripe : 200 OK
+  end
+end
+
+@enduml

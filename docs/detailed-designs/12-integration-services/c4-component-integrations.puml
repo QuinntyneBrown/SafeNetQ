@@ -1,0 +1,50 @@
+@startuml c4-component-integrations
+!include <C4/C4_Component>
+
+title C4 Component Diagram -- Integration Services
+
+skinparam defaultFontSize 11
+skinparam shadowing false
+
+System_Boundary(integrations, "Integration Services Bounded Context") {
+  Component(webhookCtrl, "WebhookController", "ASP.NET Core", "Receives and routes webhooks from Stripe, Jumio, SendGrid")
+  Component(paymentCtrl, "PaymentController", "ASP.NET Core", "PAD setup, card charge, payout initiation")
+  Component(stripeAdapter, "StripePaymentAdapter", "Stripe .NET SDK", "PAD, card charges, Interac payouts, customer management")
+  Component(jumioAdapter, "JumioIdentityAdapter", "Jumio SDK", "Document verification sessions and result processing")
+  Component(sgAdapter, "SendGridEmailAdapter", "SendGrid SDK", "Templated transactional email delivery")
+  Component(twilioAdapter, "TwilioSmsAdapter", "Twilio SDK", "SMS delivery for critical alerts")
+  Component(s3Adapter, "S3StorageAdapter", "AWS S3 SDK", "Encrypted object storage with pre-signed URLs")
+  Component(stripeWH, "StripeWebhookHandler", ".NET Service", "Signature verification, idempotent event processing")
+  Component(jumioWH, "JumioWebhookHandler", ".NET Service", "HMAC verification, verification result processing")
+  Component(resilience, "ResiliencePolicies", "Polly", "Retry, circuit breaker, timeout for all adapters")
+}
+
+ContainerDb(postgres, "PostgreSQL", "Database", "Processed events, payment records, verification results")
+Container(eventBus, "Event Bus", "RabbitMQ", "Domain events for contributions, verifications")
+
+System_Ext(stripe, "Stripe", "Payment processing: PAD, cards, Interac")
+System_Ext(jumio, "Jumio", "Identity document verification")
+System_Ext(sendgrid, "SendGrid", "Transactional email delivery")
+System_Ext(twilio, "Twilio", "SMS delivery")
+System_Ext(s3, "AWS S3 (ca-central-1)", "Encrypted document storage")
+
+Rel(stripe, webhookCtrl, "Payment webhooks", "HTTPS")
+Rel(jumio, webhookCtrl, "Verification webhooks", "HTTPS")
+Rel(webhookCtrl, stripeWH, "Routes Stripe events")
+Rel(webhookCtrl, jumioWH, "Routes Jumio events")
+Rel(paymentCtrl, stripeAdapter, "Delegates payment ops")
+Rel(stripeAdapter, stripe, "API calls", "HTTPS")
+Rel(jumioAdapter, jumio, "API calls", "HTTPS")
+Rel(sgAdapter, sendgrid, "API calls", "HTTPS")
+Rel(twilioAdapter, twilio, "API calls", "HTTPS")
+Rel(s3Adapter, s3, "S3 API", "HTTPS")
+Rel(stripeWH, postgres, "Idempotency check, writes")
+Rel(stripeWH, eventBus, "Publishes domain events")
+Rel(jumioWH, eventBus, "Publishes verification results")
+Rel(stripeAdapter, resilience, "Wrapped with policies")
+Rel(jumioAdapter, resilience, "Wrapped with policies")
+Rel(sgAdapter, resilience, "Wrapped with policies")
+Rel(twilioAdapter, resilience, "Wrapped with policies")
+Rel(s3Adapter, resilience, "Wrapped with policies")
+
+@enduml
